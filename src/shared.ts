@@ -220,6 +220,16 @@ export interface RuntimeStatus {
   vspipe: boolean;
   ytDlp: boolean;
   vapourSynthPlugins: boolean;
+  /** Parsed version strings for the tools that responded (empty/omitted if the tool
+   *  was missing or the version line was unparseable). Displayed in Settings → Local
+   *  pipeline so the user can see exactly what's bundled. Booleans stay the health
+   *  signal; versions are the human-facing detail. */
+  versions?: {
+    ffmpeg?: string;
+    ffprobe?: string;
+    ytDlp?: string;
+    vapourSynth?: string;
+  };
   error?: string;
 }
 

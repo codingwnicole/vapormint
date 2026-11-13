@@ -79,21 +79,26 @@ function capture(command: string, args: string[], signal?: AbortSignal) {
   });
 }
 
-const pluginProbe = `import vapoursynth as vs
+const pluginProbe = `import sys, vapoursynth as vs
 from vsdeinterlace import QTempGaussMC
 core = vs.core
 required = {"BestSource": (core.bs, "VideoSource"), "BM3D": (core.bm3d, "Basic"), "Bwdif": (core.bwdif, "Bwdif"), "CAS": (core.cas, "CAS"), "Descale": (core.descale, "Debilinear"), "MVTools": (core.mv, "FlowFPS"), "MVUtensils": (core.mvu, "Super"), "Resize2": (core.resize2, "Bob"), "VIVTC": (core.vivtc, "VFM"), "ZNEDI3": (core.znedi3, "nnedi3")}
 missing = [name for name, (plugin, function) in required.items() if not hasattr(plugin, function)]
 if missing: raise RuntimeError("Missing VapourSynth plugins: " + ", ".join(missing))
 core.std.BlankClip(width=64, height=64, length=1, format=vs.YUV420P8).set_output()
+# Report the core version on its own line so the host can read it without
+# parsing the --info clip metadata above.
+print("VAPORMINT_VS_CORE=R" + str(core.core_version.release_major))
 `;
 
-async function verifyPlugins(vspipe: string) {
+async function verifyPlugins(vspipe: string): Promise<string | null> {
   const folder = await mkdtemp(path.join(tmpdir(), 'vapormint-runtime-'));
   const script = path.join(folder, 'probe.vpy');
   try {
     await writeFile(script, pluginProbe, 'utf8');
-    await capture(vspipe, ['--info', script, '-']);
+    const { stdout } = await capture(vspipe, ['--info', script, '-']);
+    const m = stdout.match(/VAPORMINT_VS_CORE=(R\d+)/);
+    return m ? m[1] : null;
   } finally {
     await rm(folder, { recursive: true, force: true });
   }
@@ -149,21 +154,32 @@ async function runBrain(sourcePath: string, probe: Record<string, unknown>, sign
 
 export async function getRuntimeStatus(): Promise<RuntimeStatus> {
   const tools = [['ffmpeg', 'ffmpeg'], ['ffprobe', 'ffprobe'], ['vspipe', 'vspipe'], ['ytDlp', 'yt-dlp']] as const;
+  // Parse a concise version token from a tool's `-version` output.
+  // ffmpeg/ffprobe: "ffmpeg version n9.0.1-29-gad500d59cb-20260913 Copyright ..."
+  // yt-dlp:         "2026.08.19" (bare)
+  const parseVersion = (name: string, out: string): string => {
+    const line = out.split(/\r?\n/).find((l) => l.trim()) ?? '';
+    if (name === 'yt-dlp') return line.trim();
+    const m = line.match(/version\s+(\S+)/);
+    return m ? m[1] : '';
+  };
   const entries = await Promise.all(tools.map(async ([key, name]) => {
     try {
-      await capture(await executable(name), runtimeVersionArguments(name));
-      return [key, true] as const;
+      const { stdout } = await capture(await executable(name), runtimeVersionArguments(name));
+      return [key, true, parseVersion(name, stdout)] as const;
     } catch {
-      return [key, false] as const;
+      return [key, false, ''] as const;
     }
   }));
-  const status = Object.fromEntries(entries) as Pick<RuntimeStatus, 'ffmpeg' | 'ffprobe' | 'vspipe' | 'ytDlp'>;
+  const status = Object.fromEntries(entries.map(([key, ok]) => [key, ok])) as Pick<RuntimeStatus, 'ffmpeg' | 'ffprobe' | 'vspipe' | 'ytDlp'>;
+  const versions = Object.fromEntries(entries.map(([key, ok, version]) => ok && version ? [key, version] : [key, undefined])) as Record<string, string | undefined>;
   try {
     if (!status.vspipe) throw new Error('VSPipe is unavailable.');
-    await verifyPlugins(await executable('vspipe'));
-    return { ...status, vapourSynthPlugins: true };
+    const core = await verifyPlugins(await executable('vspipe'));
+    if (core) versions.vapourSynth = core;
+    return { ...status, vapourSynthPlugins: true, versions };
   } catch (error) {
-    return { ...status, vapourSynthPlugins: false, error: error instanceof Error ? error.message : String(error) };
+    return { ...status, vapourSynthPlugins: false, versions, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
