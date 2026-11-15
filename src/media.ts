@@ -309,6 +309,10 @@ export async function prepareSource(sourcePath: string, episodeLabel: string, pr
       throw new Error(`A playback copy could not be created for ${path.basename(sourcePath)}. The original is safe. Check available disk space and try importing it again. ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+  onProgress({ percent: 95, message: `Indexing ${path.basename(sourcePath)} for fast exports` });
+  try {
+    await preIndexSource(sourcePath, (p) => onProgress({ percent: 95 + p.percent * 0.04, message: p.message }), signal);
+  } catch { /* Index will be built on first export instead — not fatal. */ }
   onProgress({ percent: 100, message: `Ready: ${episodeLabel}` });
   return {
     id, sourcePath, playbackPath, thumbnailPath, fileUrl: pathToFileURL(playbackPath ?? sourcePath).href,
@@ -346,6 +350,30 @@ export async function downloadPublicVideo(value: string, downloadFolder: string,
       reject(new Error('The download finished but the source master could not be located.'));
     });
   });
+}
+
+// ponytail: pre-index at import time so exports start instantly
+async function preIndexSource(sourcePath: string, onProgress: (progress: TaskProgress) => void, signal?: AbortSignal) {
+  const vspipeCommand = await executable('vspipe');
+  const script = `import vapoursynth as vs\nclip = vs.core.bs.VideoSource(source=${JSON.stringify(sourcePath)}, cachemode=1)\nclip[0].copy()  # force index\nclip.set_output()`;
+  const scriptPath = path.join(tmpdir(), `vapormint-index-${crypto.randomUUID()}.vpy`);
+  await writeFile(scriptPath, script);
+  try {
+    const child = spawnTool(vspipeCommand, ['-c', 'y4m', '--progress', scriptPath, '-'], signal);
+    child.stdout.resume(); // drain stdout, we don't need it
+    await new Promise<void>((resolve, reject) => {
+      child.stderr.on('data', (chunk: Buffer) => {
+        const text = chunk.toString();
+        const m = text.match(/index progress\s*(\d+)%/i);
+        if (m) onProgress({ percent: Math.min(99, Number(m[1])), message: `Indexing ${path.basename(sourcePath)} — first import is slow, next ones are fast` });
+      });
+      child.once('error', reject);
+      child.once('close', (code) => code === 0 ? resolve() : reject(new Error(`BestSource indexing failed (code ${code})`)));
+    });
+    onProgress({ percent: 100, message: `Indexed ${path.basename(sourcePath)}` });
+  } finally {
+    rm(scriptPath, { force: true }).catch(() => {});
+  }
 }
 
 const py = (value: string) => JSON.stringify(value);
@@ -398,7 +426,7 @@ export function compileVapourSynthScript(request: ExportRequest) {
     'import vapoursynth as vs',
   ];
   if (recipe.deinterlace.startsWith('QTGMC')) lines.push('from vsdeinterlace import QTempGaussMC');
-  lines.push('core = vs.core', `clip = core.bs.VideoSource(source=${py(source.sourcePath)}, cachemode=0)`, 'if clip.format.color_family == vs.RGB:', `    clip = core.resize.Spline36(clip, format=vs.YUV444P16, matrix_s=${py(matrix)})`, '# Cadence/deinterlace runs before trimming so neighboring frames remain available.');
+  lines.push('core = vs.core', `clip = core.bs.VideoSource(source=${py(source.sourcePath)}, cachemode=1)`, 'if clip.format.color_family == vs.RGB:', `    clip = core.resize.Spline36(clip, format=vs.YUV444P16, matrix_s=${py(matrix)})`, '# Cadence/deinterlace runs before trimming so neighboring frames remain available.');
   if (recipe.deinterlace === 'Off') lines.push('# Progressive workflow: deinterlacing is disabled.');
   if (recipe.deinterlace === 'Bwdif') lines.push(`clip = core.bwdif.Bwdif(clip, field=${topField ? 1 : 0})`);
   if (recipe.deinterlace === 'Bwdif 2×') lines.push(`clip = core.bwdif.Bwdif(clip, field=${topField ? 3 : 2})`);
@@ -535,22 +563,37 @@ async function runVapourSynth(request: ExportRequest, scriptPath: string, output
   const vspipeCommand = await executable('vspipe');
   const ffmpegCommand = await executable('ffmpeg');
   const vspipe = spawnTool(vspipeCommand, ['-c', 'y4m', '--progress', scriptPath, '-'], signal);
-  const ffmpeg = spawnTool(ffmpegCommand, vapourSynthFfmpegArguments(request, outputPath), signal);
   let errors = '';
-  vspipe.stdout.pipe(ffmpeg.stdin);
-  ffmpeg.stdin.on('error', (error: NodeJS.ErrnoException) => { if (error.code !== 'EPIPE') errors = `${errors}${error.message}`.slice(-16000); });
+  let indexingDone = false;
   const collect = (chunk: Buffer, message: string) => {
     const text = chunk.toString();
     errors = `${errors}${text}`.slice(-16000);
     const matches = [...text.matchAll(/out_time_ms=(\d+)/g)];
     const elapsed = Number(matches.at(-1)?.[1] ?? 0);
     const frames = text.match(/Frame:\s*(\d+)\/(\d+)/i);
+    const indexProgress = text.match(/index progress\s*(\d+)%/i);
     if (elapsed) onProgress(Math.min(99, elapsed / 10_000 / Math.max(0.01, request.clip.end - request.clip.start)), message);
-    else if (frames) onProgress(Math.min(99, Number(frames[1]) / Math.max(1, Number(frames[2])) * 100), message);
+    else if (frames) { indexingDone = true; onProgress(Math.min(99, Number(frames[1]) / Math.max(1, Number(frames[2])) * 100), message); }
+    else if (indexProgress && !indexingDone) onProgress(Math.min(3, Number(indexProgress[1]) / 100 * 3), `Indexing source (${indexProgress[1]}%) — first export is slow, next ones are fast`);
   };
   vspipe.stderr.on('data', (chunk: Buffer) => collect(chunk, 'VapourSynth is filtering'));
-  ffmpeg.stderr.on('data', (chunk: Buffer) => collect(chunk, 'FFmpeg is encoding'));
-  const wait = (child: ReturnType<typeof spawn>, name: string) => new Promise<void>((resolve, reject) => {
+  // ponytail: defer ffmpeg spawn until vspipe emits y4m data — BestSource indexing can stall the pipe for minutes, and ffmpeg fails probing an empty pipe ("Header too large")
+  const ffmpegReady = new Promise<ReturnType<typeof spawnTool>>((resolve, reject) => {
+    let launched = false;
+    vspipe.stdout.once('data', (firstChunk: Buffer) => {
+      launched = true;
+      const ffmpeg = spawnTool(ffmpegCommand, vapourSynthFfmpegArguments(request, outputPath), signal);
+      ffmpeg.stdin.on('error', (error: NodeJS.ErrnoException) => { if (error.code !== 'EPIPE') errors = `${errors}${error.message}`.slice(-16000); });
+      ffmpeg.stderr.on('data', (chunk: Buffer) => collect(chunk, 'FFmpeg is encoding'));
+      ffmpeg.stdin.write(firstChunk);
+      vspipe.stdout.pipe(ffmpeg.stdin);
+      resolve(ffmpeg);
+    });
+    vspipe.once('close', (code) => { if (!launched) reject(new Error(errors || `vspipe exited with code ${code} before producing output`)); });
+    vspipe.once('error', (error) => { if (!launched) reject(error); });
+  });
+  const ffmpeg = await ffmpegReady;
+  const wait = (child: ReturnType<typeof spawnTool>, name: string) => new Promise<void>((resolve, reject) => {
     child.once('error', (error) => { stopChild(vspipe); stopChild(ffmpeg); reject(error); });
     child.once('close', (code) => {
       if (code === 0) resolve();

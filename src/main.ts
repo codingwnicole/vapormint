@@ -53,7 +53,10 @@ function stopBackgroundWork() {
 }
 
 const preferencesPath = () => path.join(app.getPath('userData'), 'preferences.json');
-const legacySessionPath = () => path.join(app.getPath('userData'), 'current-session.json');
+const legacySessionPaths = () => [
+  path.join(app.getPath('userData'), 'current-session.json'),
+  ...legacyAppDataPaths().map((p) => path.join(p, 'current-session.json')),
+];
 const defaultPreferences = (): StudioPreferences => ({
   libraryPath: path.join(app.getPath('documents'), "Vapormint", 'Projects'),
   downloadPath: path.join(app.getPath('videos'), "Vapormint", 'Downloaded Masters'),
@@ -86,9 +89,23 @@ async function atomicJson(file: string, value: unknown) {
   await rename(temporary, file);
 }
 
+// ponytail: migrate from "LQ's Cutting Floor" on first launch
+const legacyAppDataPaths = () => [
+  path.join(app.getPath('appData'), "LQ's Cutting Floor"),
+  path.join(app.getPath('appData'), 'LQ-Cutting-Floor'),
+];
+
 async function loadPreferences() {
   try { return { ...defaultPreferences(), ...JSON.parse(await readFile(preferencesPath(), 'utf8')) } as StudioPreferences; }
-  catch { return defaultPreferences(); }
+  catch {
+    for (const legacy of legacyAppDataPaths()) {
+      try {
+        const old = JSON.parse(await readFile(path.join(legacy, 'preferences.json'), 'utf8'));
+        return { ...defaultPreferences(), ...old } as StudioPreferences;
+      } catch { /* Try next legacy path. */ }
+    }
+    return defaultPreferences();
+  }
 }
 
 async function persistPreferences(preferences: StudioPreferences, allowFallback = false) {
@@ -175,13 +192,14 @@ async function loadWorkspace() {
   try { await access(preferencesPath()); } catch { firstRun = true; }
   let preferences = await persistPreferences(await loadPreferences(), firstRun);
   let cards = await projectCards(preferences);
-  let session: StudioSession;
+  let session: StudioSession = emptySession();
   const selected = cards.find((card) => card.id === preferences.activeProjectId) ?? cards[0];
   if (selected) session = await loadProject(selected.id, preferences);
   else {
-    try { session = normalizeSession(JSON.parse(await readFile(legacySessionPath(), 'utf8')) as StudioSession); }
-    catch { session = emptySession(); }
-    try { await access(legacySessionPath()); session = await writeProject(session, preferences); cards = await projectCards(preferences); } catch { /* Keep the first empty project transient. */ }
+    for (const legacyPath of legacySessionPaths()) {
+      try { session = normalizeSession(JSON.parse(await readFile(legacyPath, 'utf8')) as StudioSession); session = await writeProject(session, preferences); cards = await projectCards(preferences); break; }
+      catch { /* Try next legacy path. */ }
+    }
   }
   preferences = await persistPreferences({ ...preferences, activeProjectId: cards.length ? session.id : undefined });
   activeSession = session;
