@@ -7,7 +7,7 @@
   -webkit-font-smoothing: antialiased;
   --ink: #f0ece4;
   --muted: #a09a8e;
-  --quiet: #7a756c;
+  --quiet: #827d74;
   --line: #1e1e1c;
   --line-strong: #3a3834;
   --surface: #0c0c0b;
@@ -210,6 +210,21 @@ kbd, .mark-controls strong, .queue-open > span, .queue-open small, .process-list
   .settings-page h1 { margin-bottom: 22px; font-size: 42px; }
 }
 
+/* ponytail: entrance + feedback animations — reduced-motion query below kills all of these */
+@keyframes page-in { from { opacity: 0; transform: translateY(4px); } }
+.page, .modal-backdrop, .receipt-overlay { animation: page-in .18s ease-out; }
+.welcome-copy { transition: opacity .14s ease; }
+.mark-controls button:active { animation: mark-flash .25s ease-out; }
+@keyframes mark-flash { from { background: color-mix(in srgb, var(--acid) 18%, transparent); } }
+.project-card, .source-card, .queue-item { animation: page-in .18s ease-out both; }
+.project-card:nth-child(2), .source-card:nth-child(2), .queue-item:nth-child(2) { animation-delay: .03s; }
+.project-card:nth-child(3), .source-card:nth-child(3), .queue-item:nth-child(3) { animation-delay: .06s; }
+.project-card:nth-child(4), .source-card:nth-child(4), .queue-item:nth-child(4) { animation-delay: .09s; }
+.project-card:nth-child(n+5), .source-card:nth-child(n+5), .queue-item:nth-child(n+5) { animation-delay: .12s; }
+body, .app-shell, .sidebar, .titlebar { transition: background .2s ease, color .2s ease; }
+@keyframes skeleton-pulse { 50% { opacity: .4; } }
+.source-frame:empty, .video-wrap:not(:has(video[src])) { animation: skeleton-pulse 1.2s ease-in-out infinite; background: var(--panel); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
@@ -325,7 +340,7 @@ kbd, .mark-controls strong, .queue-open > span, .queue-open small, .process-list
 }
 
 /* Warm paper mode. */
-.theme-light { color: #1c1a16; background: #f5f2ec; --ink: #1c1a16; --muted: #6b6558; --quiet: #8a8478; --line: #d8d2c4; --line-strong: #a8a090; --surface: #ede9e0; --panel: #ffffff; --panel-2: #f0ece4; --acid: #8a7a3a; --acid-dim: #a89860; --magenta: #6b5a2a; --reviewed: #167653; --warning: #9a5708; --destructive: #b83248; }
+.theme-light { color: #1c1a16; background: #f5f2ec; --ink: #1c1a16; --muted: #6b6558; --quiet: #746e62; --line: #d8d2c4; --line-strong: #a8a090; --surface: #ede9e0; --panel: #ffffff; --panel-2: #f0ece4; --acid: #8a7a3a; --acid-dim: #a89860; --magenta: #6b5a2a; --reviewed: #167653; --warning: #9a5708; --destructive: #b83248; }
 .app-shell.theme-light { background: var(--surface); }
 .theme-light { color-scheme: light; }
 .theme-dark { color-scheme: dark; }
