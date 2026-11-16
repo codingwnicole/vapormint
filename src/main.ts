@@ -526,7 +526,7 @@ else void app.whenReady().then(async () => {
   // release, compares its tag to the running version, and deep-links to the release
   // page where VapormintSetup.exe lives. That is the standard pattern for Squirrel
   // apps that don't run a signed Squirrel feed server.
-  const GITHUB_REPO = 'hxxliz/lqs-floor-rev-2';
+  const GITHUB_REPO = 'hxxliz/vapormint';
   const RELEASE_PAGE = `https://github.com/${GITHUB_REPO}/releases`;
   const semver = (v: string) => v.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
   const isNewer = (a: string, b: string) => { const x = semver(a), y = semver(b); for (let i = 0; i < 3; i++) { if ((x[i] ?? 0) > (y[i] ?? 0)) return true; if ((x[i] ?? 0) < (y[i] ?? 0)) return false; } return false; };

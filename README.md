@@ -134,8 +134,8 @@ Crop → Deinterlace → Debilinear → Denoise → Sharpen → Crop
 Requires Node.js (the build tested on Node 24) and npm.
 
 ```bash
-git clone https://github.com/hxxliz/lqs-floor-rev-2.git
-cd lqs-floor-rev-2
+git clone https://github.com/hxxliz/vapormint.git
+cd vapormint
 npm install
 npm run check        # domain + sidebar self-tests
 npm run typecheck    # tsc --noEmit
@@ -150,7 +150,7 @@ The finished installer lands in `out/make/squirrel.windows/x64/VapormintSetup.ex
 
 ## Releases
 
-Releases live on [GitHub](https://github.com/hxxliz/lqs-floor-rev-2/releases). Each release attaches:
+Releases live on [GitHub](https://github.com/hxxliz/vapormint/releases). Each release attaches:
 
 | Asset | What it is |
 |-------|-----------|
@@ -161,7 +161,7 @@ The in-app **Check for updates** reads the Squirrel `RELEASES` metadata from the
 
 ### Current version
 
-**2.1.0** — export pipeline fixes, import-time pre-indexing, IPC security hardening, UI entrance animations, and in-app version info. See [release notes](https://github.com/hxxliz/lqs-floor-rev-2/releases/tag/v2.1.0).
+**2.1.0** — export pipeline fixes, import-time pre-indexing, IPC security hardening, UI entrance animations, and in-app version info. See [release notes](https://github.com/hxxliz/vapormint/releases/tag/v2.1.0).
 
 ---
 
