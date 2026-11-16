@@ -1,8 +1,8 @@
-# LQ's Cutting Floor — Cross-Platform Studio Design System
+# Vapormint — Cross-Platform Studio Design System
 
 ## Product
 
-LQ's Cutting Floor is a desktop video-sifting and VapourSynth-processing studio. The UI supports four persistent workspaces: Home, Find Moments, Process Clips, and Settings. The product must feel native on macOS and Windows while sharing one clear information architecture.
+Vapormint is a desktop video-sifting and VapourSynth-processing studio. The UI supports four persistent workspaces: Home, Find Moments, Process Clips, and Settings. The product must feel native on macOS and Windows while sharing one clear information architecture.
 
 ## Direction
 
@@ -64,7 +64,7 @@ Use the supplied music-library screenshot as structural inspiration: a calm desk
 - Clip queue rows show index, clip name, duration, and Ready/Complete state at a glance.
 - Playback transport remains outside the crop overlay and always visible.
 - Progress uses determinate bars, percentage, phase, and elapsed time.
-- The actual supplied LQ's Cutting Floor logo must appear in every logo position; never substitute initials, emoji, generic symbols, invented SVG marks, or text alone.
+- The actual supplied Vapormint logo must appear in every logo position; never substitute initials, emoji, generic symbols, invented SVG marks, or text alone.
 
 ## Motion and accessibility
 

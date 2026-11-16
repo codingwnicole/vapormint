@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""cf_analysis.py — source analysis brain for Vapormint (LQ's Cutting Floor 2.0).
+"""cf_analysis.py — source analysis brain for Vapormint.
 
 Faithful port of the Rust `cf-analysis` crate (pixels.rs + timing.rs) into the
 bundled Python runtime. Pure stdlib only: NO numpy, NO OpenCV. Luma frames are

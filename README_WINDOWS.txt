@@ -1,5 +1,5 @@
-LQ'S CUTTING FLOOR — WINDOWS
-================================
+VAPORMINT — WINDOWS
+===================
 
 New users should begin with README_FIRST_USE.txt. This document contains the
 full Windows installation, build, and troubleshooting reference.
@@ -13,7 +13,7 @@ SYSTEM REQUIREMENTS
 
 INSTALLATION
 ------------
-1. Run LQ's Cutting Floor.exe. It is the complete Windows installer; the
+1. Run VapormintSetup.exe. It is the complete Windows installer; the
    RELEASES and .nupkg files are retained only for release/update tooling.
 2. No separate Python, FFmpeg, FFprobe, yt-dlp,
    VapourSynth, VSPipe, or plugin installation is required.
@@ -23,7 +23,7 @@ INSTALLATION
 WINDOWS SMARTSCREEN
 -------------------
 Unsigned or newly signed builds can display "Windows protected your PC."
-Only continue if this installer came from the trusted Cutting Floor release
+Only continue if this installer came from the trusted Vapormint release
 and its SHA-256 value matches SHA256SUMS.txt. Choose More info, verify the
 publisher/file, then choose Run anyway. Production releases should be signed
 with a trusted Windows code-signing certificate to avoid this warning.
@@ -45,11 +45,9 @@ BASIC WORKFLOW
 
 UPDATING AN EXISTING INSTALLATION
 ---------------------------------
-Keep LQ's Cutting Floor.exe, update_windows.bat, update_windows.ps1, and
-SHA256SUMS.txt together. Save your work and close the app, then double-click
-update_windows.bat. It checks the installer hash, locates the standard per-user
-installation, runs the Squirrel update, verifies the app, and opens it again.
-The updater does not search the entire drive or modify project/session files.
+Download the latest VapormintSetup.exe from the release page. Save your work
+and close the app, then run the installer. Your settings, projects, and
+completed exports are preserved across updates.
 
 OUTPUTS AND PROJECT SAFETY
 --------------------------
@@ -62,24 +60,23 @@ OUTPUTS AND PROJECT SAFETY
 
 BUILDING FROM SOURCE
 --------------------
-Install 64-bit Node.js 22 or newer, then double-click build_windows.bat or run:
+Install 64-bit Node.js 22 or newer, then run:
 
-  build_windows.bat
+  npm install
+  npm run check
+  npm run make
 
-The script performs a clean npm install, TypeScript/domain checks, a bundled
-runtime/plugin probe, and an Electron Forge Squirrel.Windows build. Artifacts
-and SHA-256 checksums are written to dist\.
+The build performs a clean install, TypeScript/domain checks, a bundled
+runtime/plugin probe, and an Electron Forge Squirrel.Windows build. The
+finished installer lands in out/make/squirrel.windows/x64/VapormintSetup.exe.
+SHA-256 checksums are written to dist\.
 
 Optional signing variables:
 
   WINDOWS_CERTIFICATE_FILE=C:\secure\certificate.pfx
   WINDOWS_CERTIFICATE_PASSWORD=your-certificate-password
 
-Do not commit the certificate or password. The application is asset-heavy, so
-the supported production output is the single LQ's Cutting Floor.exe installer,
-not a PyInstaller one-file Python executable. Electron
-resolves packaged binaries from process.resourcesPath, the direct equivalent
-of Python's sys._MEIPASS for this application architecture.
+Do not commit the certificate or password.
 
 TROUBLESHOOTING
 ---------------

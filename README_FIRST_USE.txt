@@ -1,16 +1,16 @@
-LQ'S CUTTING FLOOR — FIRST USE
-================================
+VAPORMINT — FIRST USE
+=====================
 
 WELCOME
 -------
-LQ's Cutting Floor helps you review source videos, mark precise moments,
+Vapormint helps you review source videos, mark precise moments,
 prepare them with VapourSynth, and export polished video masters or optional
 PNG frames. Processing runs locally, and your original source files are never
 modified.
 
 INSTALL
 -------
-1. Run LQ's Cutting Floor.exe.
+1. Run VapormintSetup.exe.
 2. Windows SmartScreen may say "Windows protected your PC" because this test
    build is not yet code-signed. If you received it from a trusted source,
    choose More info, confirm the filename, then choose Run anyway.
@@ -68,7 +68,11 @@ PROCESSING NOTES
 - 4K, QTGMC, Fine detail BM3D, 60 fps motion, and PNG extraction can take
   substantial time and disk space.
 - Public-video downloads require internet access. Normal processing does not.
-- If YouTube asks you to sign in or confirm you are not a bot, retry the download and choose a browser where you are already signed into YouTube. Cutting Floor passes that browser directly to yt-dlp; it does not save or export the browser cookies. Close the selected browser first if Windows reports that its cookie database is locked.
+- If YouTube asks you to sign in or confirm you are not a bot, retry the
+  download and choose a browser where you are already signed into YouTube.
+  Vapormint passes that browser directly to yt-dlp; it does not save or export
+  the browser cookies. Close the selected browser first if Windows reports that
+  its cookie database is locked.
 
 SYSTEM REQUIREMENTS
 -------------------

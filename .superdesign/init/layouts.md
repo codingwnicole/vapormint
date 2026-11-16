@@ -351,7 +351,7 @@ export default function App() {
 
   return <div className={`app-shell theme-${preferences.theme ?? 'dark'}`}>
     <header className="titlebar">
-      <div className="wordmark"><span className="mark">LQ</span><span>LQ'S CUTTING FLOOR</span><small>DESKTOP STUDIO</small></div>
+      <div className="wordmark"><span className="mark">LQ</span><span>VAPORMINT</span><small>DESKTOP STUDIO</small></div>
       <div className="project-name"><span className="status-dot" />{session.name}</div>
     </header>
 
@@ -422,7 +422,7 @@ function Home({ session, projects, downloading, onNewProject, onOpenProject, onR
   const [url, setUrl] = useState('');
   return <section className="page home-page">
     <div className="home-intro">
-      <div className="eyebrow">LQ'S CUTTING FLOOR</div>
+      <div className="eyebrow">VAPORMINT</div>
       <h1>Your next great moment is in here.</h1>
       <p>Move through a season, keep every source in context, and turn the moments you love into polished clips.</p>
       <div className="home-actions"><button className="primary" disabled={downloading} onClick={onSeason}>▣ Import a season folder</button><button className="ghost" disabled={downloading} onClick={onImport}>▣ Video files</button><button className="ghost" disabled={downloading} onClick={onWatch}>Watch folder</button></div>

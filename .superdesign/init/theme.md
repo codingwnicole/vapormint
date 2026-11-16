@@ -314,7 +314,7 @@ kbd, .mark-controls strong, .queue-open > span, .queue-open small, .process-list
 ```json
 {
   "name": "lqs-cutting-floor",
-  "productName": "LQ's Cutting Floor",
+  "productName": "Vapormint",
   "version": "0.3.6",
   "author": "LQ",
   "description": "Cross-platform desktop video sifting and VapourSynth processing studio.",

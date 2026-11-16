@@ -2,7 +2,7 @@
 
 ## Scope
 
-This note evaluates which source properties LQ's Cutting Floor can detect reliably and which should remain review prompts. It uses only first-party FFmpeg documentation/source and VapourSynth plugin documentation/source. Recommendations are deliberately conservative: an automatic choice should prevent a known technical error, not guess a preferred look.
+This note evaluates which source properties Vapormint can detect reliably and which should remain review prompts. It uses only first-party FFmpeg documentation/source and VapourSynth plugin documentation/source. Recommendations are deliberately conservative: an automatic choice should prevent a known technical error, not guess a preferred look.
 
 ## Executive recommendation
 

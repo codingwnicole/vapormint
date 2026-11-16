@@ -36,7 +36,7 @@ call npm run make || goto :failed
 echo [6/6] Creating the distribution folder and checksums...
 mkdir "dist" || goto :failed
 copy /y "out\make\squirrel.windows\x64\*" "dist\" >nul || goto :failed
-move /y "dist\LQsCuttingFloorSetup.exe" "dist\LQ's Cutting Floor.exe" >nul || goto :failed
+rem ponytail: Forge already outputs VapormintSetup.exe, no rename needed
 copy /y "README_WINDOWS.txt" "dist\" >nul || goto :failed
 copy /y "README_FIRST_USE.txt" "dist\" >nul || goto :failed
 copy /y "CHANGELOG.md" "dist\" >nul || goto :failed
@@ -45,7 +45,7 @@ copy /y "update_windows.bat" "dist\" >nul || goto :failed
 node -e "const fs=require('node:fs'),c=require('node:crypto'),p='dist/';const files=fs.readdirSync(p).filter(x=>x!=='SHA256SUMS.txt');fs.writeFileSync(p+'SHA256SUMS.txt',files.map(x=>c.createHash('sha256').update(fs.readFileSync(p+x)).digest('hex').toUpperCase()+'  '+x).join('\r\n')+'\r\n')" || goto :failed
 
 echo.
-echo Build complete: %CD%\dist\LQ's Cutting Floor.exe
+echo Build complete: %CD%\dist\VapormintSetup.exe
 exit /b 0
 
 :runtime_failed

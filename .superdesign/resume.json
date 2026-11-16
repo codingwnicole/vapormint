@@ -29,13 +29,13 @@
       "components": [],
       "drafts": {
         "f0387731-35f4-40f0-9590-f39d7dd1052a": {
-          "title": "LQ's Cutting Floor — Process Clips Focus Workspace",
+          "title": "Vapormint — Process Clips Focus Workspace",
           "visualDirection": "video-first macOS processing workspace with accessible matched light and dark themes",
           "parentDraftId": "525f7880-1974-4fb2-b9a8-ef7f76f28329",
           "currentVersion": 7
         },
         "20aaed07-59a3-4ef2-a969-80cdd18211fd": {
-          "title": "LQ's Cutting Floor — Process Clips — Playback Focus",
+          "title": "Vapormint — Process Clips — Playback Focus",
           "visualDirection": "active-playback-first center workspace with a narrow collapsible right queue and platform-neutral accessible themes",
           "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
           "currentVersion": 7
@@ -85,13 +85,13 @@
       "components": [],
       "drafts": {
         "ea722a23-5652-42f0-890c-cc92904315e5": {
-          "title": "LQ's Cutting Floor — Home",
+          "title": "Vapormint — Home",
           "visualDirection": "library-first homepage with visible project creation and download progress",
           "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
           "currentVersion": 6
         },
         "3f2c2da3-5aa8-40ee-8cfa-8715ecbef5e4": {
-          "title": "LQ's Cutting Floor — Home — Accessible Themes",
+          "title": "Vapormint — Home — Accessible Themes",
           "visualDirection": "library-first homepage with validated readable light and dark themes",
           "parentDraftId": "ea722a23-5652-42f0-890c-cc92904315e5",
           "currentVersion": 4
@@ -141,13 +141,13 @@
       "components": [],
       "drafts": {
         "f0bdb4fd-d0d4-455d-a182-37254463bcda": {
-          "title": "LQ's Cutting Floor — Find Moments",
+          "title": "Vapormint — Find Moments",
           "visualDirection": "playback-first marking workspace with timeline and collapsible clip queue",
           "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
           "currentVersion": 4
         },
         "9d6f156a-e058-482f-9945-b932bb41b31b": {
-          "title": "LQ's Cutting Floor — Find Moments — Accessible Themes",
+          "title": "Vapormint — Find Moments — Accessible Themes",
           "visualDirection": "playback-first marking workspace with validated readable light and dark themes",
           "parentDraftId": "f0bdb4fd-d0d4-455d-a182-37254463bcda",
           "currentVersion": 4
@@ -197,13 +197,13 @@
       "components": [],
       "drafts": {
         "a7de9542-243b-4160-b4da-26585f330aa8": {
-          "title": "LQ's Cutting Floor — Settings",
+          "title": "Vapormint — Settings",
           "visualDirection": "settings-only preferences workspace with accessible light and dark themes",
           "parentDraftId": "f0387731-35f4-40f0-9590-f39d7dd1052a",
           "currentVersion": 4
         },
         "eca94627-1893-462c-bd9b-3c4358dee36f": {
-          "title": "LQ's Cutting Floor — Settings — Accessible Themes",
+          "title": "Vapormint — Settings — Accessible Themes",
           "visualDirection": "settings-only preferences workspace with validated readable light and dark themes",
           "parentDraftId": "a7de9542-243b-4160-b4da-26585f330aa8",
           "currentVersion": 3
