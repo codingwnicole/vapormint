@@ -498,8 +498,13 @@ else void app.whenReady().then(async () => {
     try { return await exportClip(request); } catch (e) { console.error('[export:start] FAILED', e); throw e; }
   });
   ipcMain.handle('receipt:read', async (_event, receiptPath: string) => {
+    const resolved = path.resolve(receiptPath);
+    const prefs = await loadPreferences();
+    const allowed = [path.resolve(prefs.libraryPath), path.resolve(prefs.exportPath)];
+    if (!allowed.some((root) => resolved.toLowerCase().startsWith(root.toLowerCase() + path.sep) || resolved.toLowerCase() === root.toLowerCase()))
+      throw new Error('Receipt path is outside the project library and export folders.');
     try {
-      return JSON.parse(await readFile(receiptPath, 'utf8'));
+      return JSON.parse(await readFile(resolved, 'utf8'));
     } catch {
       return null;
     }
@@ -572,7 +577,10 @@ else void app.whenReady().then(async () => {
     }
   });
   ipcMain.handle('feedback:open', async (_event, url: string) => {
-    await shell.openExternal(url);
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || !parsed.hostname.endsWith('github.com'))
+      throw new Error('Only HTTPS GitHub links can be opened.');
+    await shell.openExternal(parsed.href);
   });
 
   createWindow((await loadPreferences()).theme);
