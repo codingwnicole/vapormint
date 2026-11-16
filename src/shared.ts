@@ -566,8 +566,10 @@ export function suggestedRecipePatch(analysis: SourceAnalysis): Partial<ClipReci
   // brain's distributed decode measured the defect, so the auto recipe is evidence-based and
   // never over-processes a clean source.
   const deband = banding >= 20;
-  const denoise = analysis.noise && analysis.noise >= 12 ? 'Balanced' : analysis.noise && analysis.noise >= 8 ? 'Fine detail' : 'Off';
-  // ponytail: denoise adds implicit sharpening; only stack dedicated sharpening when denoise is off.
+  // Always apply at least a safe baseline: community consensus is that VS should always do
+  // *something*. Fine detail is the gentlest tier; it carries implicit sharpening so dedicated
+  // sharpening stays off unless denoise is off (which only the explicit As-is alternative does).
+  const denoise = analysis.noise && analysis.noise >= 12 ? 'Balanced' : analysis.noise && analysis.noise >= 8 ? 'Fine detail' : 'Fine detail';
   const sharpen = denoise === 'Off' && ((banding >= 8 && banding < 20) || (analysis.noise && analysis.noise >= 8)) ? 'Natural' : 'Off';
   return {
     look: 'Custom',
@@ -619,7 +621,10 @@ export function previewSettingsForEvidence(evidence: PixelEvidence): PreviewSett
   const levels = evidence.distinctLumaLevels;
   const noise = evidence.neighborDiff;
   const clean = comb < 32 && levels > 96 && noise < 4.5;
-  if (clean) return { deinterlace: false, deband: false, denoise: false, sharpen: false };
+  // Even a clean source gets a safe baseline: light denoise (which carries implicit
+  // sharpening). Community consensus is that VS should always apply *something* — the
+  // "do nothing" path is the explicit As-is alternative, not the auto recommendation.
+  if (clean) return { deinterlace: false, deband: false, denoise: true, sharpen: false };
   // A noisy frame's neighbor differences are grain, not interlace combs — denoise it.
   const noisy = noise >= 4.5;
   // Banding is a collapsed palette (few distinct levels) that is not noise.
