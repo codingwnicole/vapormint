@@ -13,6 +13,9 @@ export const aspectPresets = [
   'Three-column landscape · 177×100',
   'Three-column square · 177×177',
   'Three-column portrait · 177×250',
+  'RP standard · 268×150',
+  'Gif icon · 250×250',
+  'RP icon · 100×100',
   'Custom',
 ] as const;
 export const masterSizes = ['Source', '1920', '2560', '3840', 'Custom'] as const;
@@ -435,8 +438,8 @@ export function sourceGuidance(analysis: SourceAnalysis): string[] {
 export function sourceVerdict(analysis: SourceAnalysis) {
   const scan = analysis.scanEvidence;
   const cadence = scan?.classification === 'Interlaced' && scan.confidence === 'High' && analysis.scanType === 'Interlaced' ? 'Interlacing confirmed — deinterlacing is enabled.' : scan?.classification === 'Progressive' && scan.confidence === 'High' && analysis.scanType === 'Progressive' ? 'Progressive (normal) footage — no deinterlacing needed.' : 'Cadence not yet confirmed by sampling — self-tune will check the rendered preview for interlacing.';
-  const color = analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG' ? `${analysis.hdr} transfer is explicitly tagged.` : analysis.hdr === 'Unknown' ? 'Color tags are incomplete; verify the image.' : 'Source is tagged SDR.';
-  return `${cadence} ${color}`;
+  const color = analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG' ? ` ${analysis.hdr} transfer is explicitly tagged.` : '';
+  return `${cadence}${color}`;
 }
 
 // Honest, plain-language callouts that reconcile the *container tag* with what the
