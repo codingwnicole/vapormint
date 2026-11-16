@@ -12,9 +12,9 @@
 
 ## Community lessons retained
 
-Previously read user-supplied Tumblr tutorials reinforce using the best available source, planning crop/output dimensions before finishing, gentle per-shot cleanup, and checking reused recipes. Examples: [Wonwooridul](https://www.tumblr.com/wonwooridul/696103970355232768/giffing-using-vs-ps), [Shuaberriez](https://www.tumblr.com/shuaberriez/719377661833658368/basic-gif-tutorial), [Quokki](https://www.tumblr.com/quokki/713994273896431616/in-depth-gif-tutorial-%CF%89).
+Use the best available source, plan crop/output dimensions before finishing, apply gentle per-shot cleanup, and check reused recipes.
 
-Blanket QTGMC settings, file-extension interlacing rules, fixed cache-size advice, Photoshop compositing, GIF timing, and GIF encoding were not adopted. The app still exports processed video and optional PNGs, not GIFs.
+Blanket QTGMC settings, file-extension interlacing rules, fixed cache-size advice, Photoshop compositing, GIF timing, and GIF encoding were not adopted. The app exports processed video and optional PNGs, not GIFs.
 
 ## Scope and verification
 

@@ -98,7 +98,7 @@ When the container says one thing and the pixels say another (e.g. "tagged progr
 
 ## The Brain
 
-Every recipe suggestion comes from a measurement pipeline, not a preset. The rules below are distilled from **13 community VapourSynth giffing tutorials** (full provenance in [`docs/methodology.md`](docs/methodology.md)). The one thing all 13 agree on is the **order**:
+Every recipe suggestion comes from a measurement pipeline, not a preset. The rules below are distilled from community VapourSynth processing practice (methodology notes in [`docs/methodology.md`](docs/methodology.md)). The one thing practitioners agree on is the **order**:
 
 ```
 Crop → Deinterlace → Debilinear → Denoise → Sharpen → Crop
@@ -114,7 +114,7 @@ Crop → Deinterlace → Debilinear → Denoise → Sharpen → Crop
 | Noisy (low bitrate) | per scanType | off | **strong** | after denoise | Grain goes before any sharpening. |
 | Banding (gradients, HDR) | per scanType | off | off | off + **deband** | Luma banding → deband, not denoise. |
 
-**The golden rule** (from the tutorials, enforced by the brain): *never sharpen before you denoise, and never auto-max anything.* The brain gives a safe **starting** recipe; your eyes make the final call.
+**The golden rule** (enforced by the brain): *never sharpen before you denoise, and never auto-max anything.* The brain gives a safe **starting** recipe; your eyes make the final call.
 
 ---
 
@@ -161,7 +161,7 @@ The in-app **Check for updates** reads the Squirrel `RELEASES` metadata from the
 
 ### Current version
 
-**2.0.0** — the "cinematic darkroom" redesign: Self-Tune, Source Guidance, Darkroom UI, batch export queue, render receipts, honest pixel callouts, auto-updater, feedback, and diagnostics.
+**2.1.0** — export pipeline fixes, import-time pre-indexing, IPC security hardening, UI entrance animations, and in-app version info. See [release notes](https://github.com/hxxliz/lqs-floor-rev-2/releases/tag/v2.1.0).
 
 ---
 
@@ -187,12 +187,21 @@ The installer bundles the whole toolchain, so you never touch a terminal:
 | `src/styles.css` | The design system (all colors are custom properties) |
 | `runtime/win32-x64/` | Bundled Python + FFmpeg + VapourSynth |
 | `scripts/cf_analysis.py` | The pixel-analysis "brain" the recipes are derived from |
-| `docs/methodology.md` | The 13-tutorial → settings table, with provenance |
+| `docs/methodology.md` | Processing-chain methodology and decision tables |
 | `docs/source-guidance-research.md` | How the source-guidance verdicts are decided |
 
 ---
 
 ## Changelog
+
+### 2.1.0
+- Export pipeline fixes: BestSource disk caching, deferred FFmpeg spawn, import-time pre-indexing
+- Indexing progress in the UI
+- In-place upgrade from LQ's Cutting Floor (auto-adopts existing projects)
+- Runtime lockfile + reproducible build script
+- In-app version info (Settings)
+- UI polish: entrance animations, list stagger, mark feedback, skeleton pulse, theme crossfade, WCAG AA contrast fix
+- Security hardening: IPC path validation on `receipt:read`, URL validation on `feedback:open`
 
 ### 2.0.0
 - Self-Tune auto-preview with evidence-based recipe write-back

@@ -1,13 +1,13 @@
 # Vapormint — Source-Condition → Recipe Methodology
 
-Distilled from 13 community VapourSynth giffing tutorials (2026-11-11).
+Distilled from community VapourSynth processing practice.
 This is the reference the "brain" (cf_analysis.py) feeds recipe presets from.
 Every recommendation below is a *starting point to eyeball*, not a fixed value —
 the community's own rule is "experiment and see what works."
 
-## 1. The universal VS chain (what every tutorial converges on)
+## 1. The universal VS chain
 
-Order matters. The de-facto standard pipeline across all 13 sources:
+Order matters. The de-facto standard pipeline:
 
     1. Crop          (frame to the region of interest)
     2. Deinterlace   (only if scanType = Interlaced)  -> QTGMC
@@ -18,11 +18,11 @@ Order matters. The de-facto standard pipeline across all 13 sources:
 
 Key principle: **deinterlace first, debilinear second, denoise before sharpen.**
 Sharpening a noisy clip amplifies the noise; denoising after sharpening smears
-detail. The chain above is the only order the tutorials agree on.
+detail. The chain above is the consensus order.
 
 ## 2. Footage-type → settings table
 
-| Source condition            | Deinterlace          | Debilinear | Denoise                  | Sharpen        | Why (per tutorials) |
+| Source condition            | Deinterlace          | Debilinear | Denoise                  | Sharpen        | Why |
 |-----------------------------|----------------------|------------|--------------------------|----------------|---------------------|
 | Interlaced TS/TP (stage, music shows) | **QTGMC Slow** (TFF per field order) | off  | light (KNLMeansCL cl=4, param≈1.8) | FineSharp sstr 0.3–0.5 | "TS/TP files must be deinterlaced before you can clip them." QTGMC Slow = the safe default. |
 | Telecine (3:2 pull-down, film-origin) | **QTGMC Quality** (or ITC if pure) | off | light | FineSharp | Higher motion-fidelity; Quality preset for the 24->30 pulldown. |
@@ -37,7 +37,7 @@ detail. The chain above is the only order the tutorials agree on.
 - **Quality** — when you need maximum motion fidelity (music videos with fast
   motion, performance gifs). Slower to render.
 - **TFF/BFF** — from field order. `TFF=True` if top field first.
-- **Slower** — a few tutorials use `Preset="Slower"` for TS/TP; same idea as
+- **Slower** — `Preset="Slower"` for TS/TP; same idea as
   Quality, even more conservative.
 - **Debilinier after QTGMC** — some chains add `descale.Debilinear` after
   QTGMC when the deinterlaced result is still soft.
@@ -48,7 +48,7 @@ detail. The chain above is the only order the tutorials agree on.
 | param (4th arg) | strength | use |
 |-----------------|----------|-----|
 | 1.0–1.2 | light | clean masters with just a little grain |
-| 1.8     | medium | the most-cited "default" value across tutorials |
+| 1.8     | medium | the most-cited "default" value |
 | 2.5     | strong | noisy sources; watch for waxy skin |
 
 `channels="YUV"` is universal. luma_spatial 4–6, pfilter 2–4.
@@ -82,7 +82,7 @@ cf_analysis.py already produces the fields that select the row above:
 
 ## 4. Per-scene variation (the "it depends on the shot" rule)
 
-The tutorials are explicit that **one setting is not enough for a whole clip** —
+**One setting is not enough for a whole clip** —
 each shot needs its own tuning. Vapormint's model (one recipe per clip, with a
 brain-derived *starting* recipe) is a pragmatic compromise:
 
@@ -96,18 +96,8 @@ brain-derived *starting* recipe) is a pragmatic compromise:
 
 ## 5. Sizing / output (context, not brain's job)
 
-From quokki / kdramaladies / shuaberriez:
-- 1-col = 540px wide, 2-col = 268px, 3-col = 177px (Tumblr column widths).
-- <10MB per gif, <3s per gif typical.
 - Source: prefer WEB-DL 1080p; TS/TP for stage; 4K facecams fine.
 - Output: Y4M / MOV to PS, or PNG frame sequence.
-
-## 6. Source list (provenance)
-
-minsung, fitzsjames ×2, wonwooridul, tinytowns, shuaberriez, sugurugetos,
-userdramas, quokki, kdramaladies, ruanbaijie, chenleyah, bangchanz.
-Full extracted text: `Documents/LQ's Cutting Floor/vapormint-source/docs/tutorials-raw.md`
-(75KB, 13 sections). Raw fetch: `scratch/tumblr_tutorials.md`.
 
 ## 7. P2 implementation note
 
