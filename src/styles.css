@@ -130,7 +130,7 @@ kbd { border: 1px solid var(--line); color: var(--muted); background: transparen
 .crop-controls { min-width: 0; display: grid; grid-template-columns: minmax(240px, .75fr) minmax(360px, 1.25fr); gap: 16px 28px; padding: 22px; border: 1px solid var(--line); background: var(--panel); }.crop-controls .section-head { grid-column: 1 / -1; margin-bottom: 2px; }.crop-controls .info-tip { grid-column: 1 / -1; }.crop-sliders { display: grid; gap: 12px; margin-top: 0; }.crop-sliders label { display: grid; grid-template-columns: 88px 1fr; align-items: center; color: var(--muted); font-size: 8px; }.crop-sliders input { width: 100%; accent-color: var(--acid); }
 .number-pair { display: flex; align-items: end; gap: 8px; }.number-pair .ghost { padding: 9px 11px; }.number-input { display: grid; gap: 6px; flex: 1; }.number-input span { color: var(--muted); font-size: 8px; font-weight: 500; letter-spacing: .12em; }.number-input input { width: 100%; min-width: 0; background: var(--panel); color: var(--ink); border: 1px solid var(--line); padding: 9px; }
 .text-button { min-height: 28px; border: 0; background: transparent; color: var(--acid); font-size: 10px; font-weight: 500; letter-spacing: .14em; margin-top: 13px; padding: 4px 2px; cursor: pointer; transition: opacity .15s; }
-.recipe-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }.recipe-section { min-width: 0; padding: 22px; border: 1px solid var(--line); background: var(--panel); }.recipe-section-head { display: flex; align-items: start; justify-content: space-between; gap: 18px; padding-bottom: 16px; margin-bottom: 18px; border-bottom: 1px solid var(--line); }.recipe-section-head span { color: var(--acid); font-size: 11px; font-weight: 800; letter-spacing: .12em; }.recipe-section-head h3 { margin: 5px 0 0; font-size: 19px; letter-spacing: -.01em; }.recipe-section-head p { max-width: 260px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }.recipe-section-fields { display: grid; gap: 17px; }.recipe-section-fields.two-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }.field { display: grid; align-content: start; gap: 9px; }.field > span { color: var(--muted); font-size: 9px; font-weight: 500; letter-spacing: .14em; }.field select { width: 100%; min-height: 44px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); padding: 11px 12px; font-size: 11px; }.field input[type="range"] { width: 100%; min-height: 28px; accent-color: var(--acid); }
+.recipe-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }.recipe-section { min-width: 0; padding: 22px; border: 1px solid var(--line); background: var(--panel); }.recipe-section-head { display: flex; align-items: start; justify-content: space-between; gap: 18px; padding-bottom: 16px; margin-bottom: 18px; border-bottom: 1px solid var(--line); cursor: pointer; list-style: none; }.recipe-section-head::-webkit-details-marker { display: none; }.recipe-section:not([open]) .recipe-section-head { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }.recipe-section-head span { color: var(--acid); font-size: 11px; font-weight: 800; letter-spacing: .12em; }.recipe-section-head h3 { margin: 5px 0 0; font-size: 19px; letter-spacing: -.01em; }.recipe-section-head p { max-width: 260px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; }.recipe-section-fields { display: grid; gap: 17px; }.recipe-section-fields.two-column { grid-template-columns: repeat(2, minmax(0, 1fr)); }.field { display: grid; align-content: start; gap: 9px; }.field > span { color: var(--muted); font-size: 9px; font-weight: 500; letter-spacing: .14em; }.field select { width: 100%; min-height: 44px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); padding: 11px 12px; font-size: 11px; }.field input[type="range"] { width: 100%; min-height: 28px; accent-color: var(--acid); }
 .toggle-row { display: flex; flex-wrap: wrap; gap: 9px; margin: 25px 0; }.toggle-row label { border: 1px solid var(--line); padding: 9px 11px; color: var(--muted); font-size: 9px; font-weight: 500; letter-spacing: .08em; }.toggle-row input { accent-color: var(--acid); margin-right: 8px; }
 .pipeline-card { border: 1px solid var(--line); border-left: 2px solid var(--acid); background: var(--panel); padding: 15px; }.pipeline-card span { display: block; color: var(--acid); font-size: 8px; font-weight: 800; letter-spacing: .13em; margin-bottom: 8px; }.pipeline-card code { color: #8b918d; font-size: 10px; }
 .frame-options { display: grid; grid-template-columns: 1fr 180px; gap: 18px; margin: 0 0 20px; padding: 14px; border: 1px solid var(--line); background: #101314; }.compatibility-note { margin-top: 14px; padding: 13px; border: 1px solid var(--warning); color: var(--muted); font-size: 10px; line-height: 1.5; }.compatibility-note b { display: block; color: #e49a3b; letter-spacing: .12em; margin-bottom: 5px; }
@@ -236,12 +236,12 @@ body, .app-shell, .sidebar, .titlebar { transition: background .2s ease, color .
 .home-ticker { display: flex; align-items: center; gap: 16px; padding: 14px 0; margin-bottom: 48px; border-bottom: 1px solid var(--line); color: var(--quiet); font: 400 10px var(--mono); letter-spacing: .14em; text-transform: uppercase; }
 .ticker-dot { color: var(--acid); }
 .home-brand { display: flex; align-items: flex-start; gap: 28px; margin-bottom: 36px; }
-.home-symbol { display: grid; width: 72px; height: 72px; flex: none; place-items: center; border: 1px solid var(--line-strong); color: var(--acid); background: var(--panel); font-size: 32px; }
+.home-symbol { display: grid; width: 72px; height: 72px; flex: none; place-items: center; border: 1px solid var(--line-strong); border-radius: 0; color: var(--acid); background: var(--panel); font-size: 32px; }
 .home-wordmark h1 { margin: 0; font-size: clamp(48px, 4.5vw, 72px); font-weight: 300; line-height: .92; letter-spacing: -.04em; }
 .home-wordmark small { display: block; margin-top: 10px; color: var(--muted); font: 400 13px var(--mono); letter-spacing: .04em; }
 .home-desc { max-width: 480px; margin: 0 0 32px; color: var(--muted); font-size: 14px; line-height: 1.7; }
-.home-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 40px; }
-.home-actions button { font-size: 11px; }
+.home-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 40px; }
+.home-actions button { font-size: 11px; text-align: left; padding: 14px 18px; border-radius: 0; }.home-actions button b { display: block; }.home-actions button small { display: block; margin-top: 5px; font-weight: 400; color: var(--muted); font-size: 9px; letter-spacing: .02em; }
 .home-actions button:disabled, .download-row input:disabled { opacity: .5; cursor: default; }
 .home-link { margin-bottom: auto; }
 .download-label { display: block; margin-bottom: 8px; color: var(--muted); font: 400 10px var(--mono); letter-spacing: .18em; text-transform: uppercase; }
@@ -253,17 +253,17 @@ body, .app-shell, .sidebar, .titlebar { transition: background .2s ease, color .
 .recent-head h2, .active-project-head h2 { margin: 4px 0 0; font-size: clamp(20px, 2vw, 30px); font-weight: 300; line-height: 1.1; letter-spacing: -.03em; overflow-wrap: anywhere; }
 .home-library .text-button { flex: 0 0 auto; margin: 0 0 4px; font-size: 11px; }
 .home-library .project-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 320px)); gap: 14px; margin-bottom: 42px; }
-.home-library .project-card { display: block; padding: 16px 18px; overflow: hidden; cursor: default; border: 1px solid var(--line); background: var(--surface); }
-.home-library .project-card.active { border-color: var(--line-strong); }
-.project-open { width: 100%; min-width: 0; display: flex; align-items: flex-start; gap: 14px; padding: 14px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
-.project-index { flex: none; font: 700 14px var(--mono); color: var(--quiet); padding-top: 3px; width: 24px; text-align: center; }
-.project-thumb { position: relative; display: grid; flex: none; width: 120px; aspect-ratio: 16 / 9; overflow: hidden; place-items: center; color: var(--ink); background: var(--panel-2); }
-.project-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.home-library .project-card { display: block; padding: 0; overflow: hidden; cursor: default; border: 1px solid var(--line); background: var(--surface); border-radius: 0; }
+.home-library .project-card.active { border-color: var(--acid-dim); }
+.project-open { width: 100%; min-width: 0; display: grid; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.project-index { position: absolute; top: 10px; left: 10px; z-index: 1; font: 700 11px var(--mono); color: var(--quiet); background: #050505cc; padding: 3px 7px; }
+.project-thumb { position: relative; display: grid; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; place-items: center; color: var(--ink); background: var(--panel-2); }
+.project-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .7; transition: opacity .2s; }.project-open:hover .project-thumb img { opacity: 1; }
 .project-thumb i { font-size: 24px; font-style: normal; font-weight: 300; letter-spacing: .12em; text-shadow: none; }
-.project-copy { flex: 1; min-width: 0; padding: 0; }
+.project-copy { min-width: 0; padding: 12px 14px 8px; }
 .project-copy b { display: -webkit-box; min-height: 1.4em; overflow: hidden; font-size: 14px; font-weight: 500; line-height: 1.3; letter-spacing: -.01em; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
 .project-copy small { display: block; margin-top: 5px; overflow: hidden; color: var(--quiet); font: 400 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
-.project-actions { display: flex; justify-content: flex-end; gap: 0; padding: 10px 0 0; margin-top: 12px; border-top: 1px solid var(--line); }
+.project-actions { display: flex; justify-content: flex-end; gap: 0; padding: 6px 10px; border-top: 1px solid var(--line); }
 .project-actions button { padding: 4px 10px; border: 0; border-radius: 0; color: var(--quiet); background: transparent; font: 400 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
 .project-actions button:hover { color: var(--ink); background: var(--panel); }
 .project-actions .danger:hover { color: var(--destructive); background: var(--panel); }
@@ -274,10 +274,13 @@ body, .app-shell, .sidebar, .titlebar { transition: background .2s ease, color .
 .compact-stats > div { display: grid; justify-items: end; }
 .compact-stats strong { color: var(--ink); font: 300 28px var(--mono); }
 .compact-stats span { color: var(--quiet); font: 400 9px var(--mono); letter-spacing: .18em; text-transform: uppercase; margin-top: 4px; }
-.home-library .source-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 230px), 1fr)); }
+.home-library .source-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
 .project-name { min-width: 0; max-width: min(42vw, 520px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.source-card { min-width: 0; overflow: hidden; border-left: 2px solid transparent; transition: border-color .15s; }
+.source-card { min-width: 0; overflow: hidden; border-left: 2px solid transparent; border-radius: 0; transition: border-color .15s; }
 .source-card:hover { border-left-color: var(--acid); }
+.home-library .source-card .source-frame { aspect-ratio: 16 / 9; }
+.home-library .source-card .source-frame img { opacity: .65; transition: opacity .2s; }
+.home-library .source-card:hover .source-frame img { opacity: 1; }
 .source-card h3 { display: -webkit-box; min-height: 2.7em; overflow: hidden; font-weight: 500; line-height: 1.35; letter-spacing: -.01em; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .source-card p { overflow: hidden; color: var(--quiet); font: 400 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; text-overflow: ellipsis; white-space: nowrap; }
 .source-strip select { min-width: 0; max-width: min(42vw, 460px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

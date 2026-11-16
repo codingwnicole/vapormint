@@ -408,7 +408,7 @@ export function sourceGuidanceItems(analysis: SourceAnalysis): SourceGuidanceIte
   const metadataScan = analysis.scanType === 'Unknown' ? `Field-order metadata is unknown.` : `Field-order metadata says ${analysis.scanType.toLowerCase()} (${analysis.fieldOrder}).`;
   const scanEvidence = scan ? `${metadataScan} ${scan.sampledWindows} windows / ${scan.sampledSeconds}s measured ${scan.topFirst + scan.bottomFirst} interlaced, ${scan.progressive} progressive, and ${scan.uncertain} uncertain frames.` : `${metadataScan} ${analysis.scanSample ?? 'No distributed cadence sample is stored for this source.'}`;
   const cadenceAgrees = Boolean(scan && scan.classification === analysis.scanType && scan.confidence === 'High');
-  const cadenceRecommendation = cadenceAgrees && analysis.scanType === 'Interlaced' ? 'Bwdif is a conservative starting point; use QTGMC only after visual comparison.' : 'Leave cadence processing off until moving edges confirm combing or a repeated-field cadence.';
+  const cadenceRecommendation = cadenceAgrees && analysis.scanType === 'Interlaced' ? 'Bwdif is a conservative starting point; QTGMC Slow produces visibly sharper output but costs more CPU. Compare both on a moving edge before committing.' : 'Leave cadence processing off until moving edges confirm combing or a repeated-field cadence.';
   const items: SourceGuidanceItem[] = [{ title: scan?.classification === 'Mixed or uncertain' ? 'Cadence needs review' : `${scan?.classification ?? analysis.scanType} cadence`, confidence: scan?.confidence ?? 'Low', evidence: scanEvidence, recommendation: cadenceRecommendation, check: 'Inspect motion, diagonal edges, and scene changes for combing, judder, or cadence shifts.' }];
   if (scan?.repeatedFields) items.push({ title: 'Possible repeated-field cadence', confidence: 'Low', evidence: `${scan.repeatedFields} repeated fields appeared in sampled windows. This alone does not confirm telecine.`, recommendation: 'Keep inverse telecine off unless a dedicated VFM/VDecimate check and playback both show a stable film cadence.', check: 'Step through motion and cuts; look for a consistent repeated-frame pattern rather than isolated duplicates.' });
   const timing = analysis.frameTiming;
@@ -424,7 +424,7 @@ export function sourceGuidanceItems(analysis: SourceAnalysis): SourceGuidanceIte
       analysis.banding !== undefined ? `banding ${analysis.banding}` : '',
     ].filter(Boolean).join(', ');
     const recommendation = analysis.banding !== undefined && analysis.banding >= 20 ? 'Strong banding was measured: enable Deband in the recipe.' : analysis.banding !== undefined && analysis.banding >= 8 ? 'Mild banding was measured: enable Deband and confirm against the source.' : analysis.noise !== undefined && analysis.noise >= 12 ? 'High noise was measured: enable Denoise (Balanced).' : analysis.noise !== undefined && analysis.noise >= 8 ? 'Moderate noise was measured: enable Denoise (Fine detail).' : 'The measured noise and banding are low: leave cleanup off and let your eyes decide.';
-    items.push({ title: 'Detail treatment measured', confidence: 'Medium', evidence: `${measured} ${analysis.bandingNote ? `(${analysis.bandingNote})` : ''} from a distributed decode of ${analysis.width}x${analysis.height} frames.`, recommendation, check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup.' });
+    items.push({ title: 'Detail treatment measured', confidence: 'Medium', evidence: `${measured} ${analysis.bandingNote ? `(${analysis.bandingNote})` : ''} from a distributed decode of ${analysis.width}x${analysis.height} frames.`, recommendation, check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup. Denoise adds implicit sharpening — avoid stacking both unless the output still looks soft.' });
   } else {
     items.push({ title: 'Detail treatment requires your eyes', confidence: 'High', evidence: 'Resolution and container bitrate do not measure noise, sharpness, blocking, or banding reliably across different scenes.', recommendation: 'Denoise, sharpen, deband, Descale, and motion smoothing stay off until the shot visibly needs them.', check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup.' });
   }
@@ -475,9 +475,25 @@ export function pixelAdvice(analysis: SourceAnalysis): string[] {
   if (analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG') {
     notes.push(`${analysis.hdr} is explicitly tagged. Convert it to SDR for an SDR master, or keep the HDR signal if your target is HDR.`);
   }
-  // 5. A freeze/opening issue the decoder flagged — review marker, not corruption.
+  // 5. Low-resolution source: processing cannot recover detail that was never there.
+  if (analysis.height > 0 && analysis.height < 720) {
+    notes.push(`Source is ${analysis.width}×${analysis.height}. Processing cannot recover detail from a low-resolution original — keep sharpening gentle and avoid upscaling beyond the source dimensions.`);
+  }
+  // 6. A freeze/opening issue the decoder flagged — review marker, not corruption.
   if (analysis.openingIssue || analysis.freezeSample) {
     notes.push('The decoder flagged a low-motion region. That is a review marker, not a defect: intentional stills and title cards are common. Play the region to confirm.');
+  }
+  // 7. Very low bitrate may indicate a re-encode or web rip.
+  if (analysis.bitrate > 0 && analysis.bitrate < 1500 && analysis.height >= 720) {
+    notes.push(`The container bitrate is only ${Math.round(analysis.bitrate)} kbps for a ${analysis.height}p source. This may be a web rip or re-encode — expect compression artifacts; heavy cleanup can smear what little detail remains.`);
+  }
+  // 8. Denoise adds implicit sharpening — stacking both risks harsh, oversharpened output.
+  if (analysis.noise !== undefined && analysis.noise >= 8) {
+    notes.push('Denoise filters add implicit sharpening as a side effect. If denoise is enabled, keep dedicated sharpening low or off — stacking both produces rigid, oversharpened edges, especially on small subjects or distant shots.');
+  }
+  // 9. Interlaced source: de-interlacing unlocks the true field rate.
+  if (analysis.scanType === 'Interlaced' && classification === 'Interlaced' && highConfidence) {
+    notes.push('This source is interlaced. Without de-interlacing, only half the temporal resolution is accessible and combing will be visible on motion. QTGMC Slow produces visibly sharper output than Fast for quality-critical work.');
   }
   return notes;
 }
@@ -551,7 +567,8 @@ export function suggestedRecipePatch(analysis: SourceAnalysis): Partial<ClipReci
   // never over-processes a clean source.
   const deband = banding >= 20;
   const denoise = analysis.noise && analysis.noise >= 12 ? 'Balanced' : analysis.noise && analysis.noise >= 8 ? 'Fine detail' : 'Off';
-  const sharpen = (banding >= 8 && banding < 20) || (analysis.noise && analysis.noise >= 8) ? 'Natural' : 'Off';
+  // ponytail: denoise adds implicit sharpening; only stack dedicated sharpening when denoise is off.
+  const sharpen = denoise === 'Off' && ((banding >= 8 && banding < 20) || (analysis.noise && analysis.noise >= 8)) ? 'Natural' : 'Off';
   return {
     look: 'Custom',
     denoise,
