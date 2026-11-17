@@ -617,6 +617,7 @@ export default function App() {
         onMove={moveClip} onRemove={removeClip} expertMode={preferences.expertMode}
         exportRoot={exportRootOverride ?? session.exportPath ?? preferences.exportPath} exporting={Boolean(exportStartedAt)} exportElapsed={exportElapsed} onChooseExportFolder={chooseExportFolder}
         onApplyRecipeToOtherClips={applyRecipeToOtherClips}
+        onResetAll={resetCompleted}
         onFind={() => setView('find')}
         onTune={tuneSelected} tuning={tuning} tuneStatus={tuneStatus} tuneResult={tuneResult} busy={busy}
         onLook={(look) => selectedClip && updateRecipe(applyLook(selectedClip.recipe, look, selectedSource?.sourceAnalysis))}
@@ -859,6 +860,7 @@ interface ProcessProps {
   onCrop(edge: 'cropLeft' | 'cropRight' | 'cropTop' | 'cropBottom', value: number): void;
   onChooseExportFolder(): void;
   onApplyRecipeToOtherClips(): void;
+  onResetAll(): void;
   onFind(): void;
   onTune(): void;
   tuning: boolean;
@@ -910,6 +912,7 @@ function ProcessClips(props: ProcessProps) {
   const [recipeIndex, setRecipeIndex] = useState(0);
   const [receipt, setReceipt] = useState<RenderReceipt | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
+  const [processFilter, setProcessFilter] = useState<'all' | 'ready' | 'exported'>('all');
   const previewVideo = useRef<HTMLVideoElement>(null);
   const clipRef = useRef(props.clip);
   clipRef.current = props.clip;
@@ -1047,7 +1050,10 @@ function ProcessClips(props: ProcessProps) {
       <div className="export-row"><div><span className={`status-dot ${props.exporting ? 'working' : ''}`} />{props.status}</div>{props.exporting && <button className="ghost" onClick={props.onCancel}>Stop safely</button>}{clip.completed && clip.receiptPath && <button className="ghost" disabled={receiptLoading} title="Open the render receipt — the auditable record of this export." onClick={() => openReceipt(clip.receiptPath as string)}>{receiptLoading ? 'Loading…' : 'Receipt'}</button>}<button className="primary" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export clip →'}</button></div>
       </div>
     </div>
-    <aside className={`process-list ${queueCollapsed ? 'collapsed' : ''}`}><button className="process-queue-head" title={queueCollapsed ? 'Show project clips' : 'Hide project clips'} onClick={() => setQueueCollapsed((value) => !value)}><span><b>PROJECT CLIPS</b><small>{props.session.clips.length} clips</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>{!queueCollapsed && props.session.clips.map((item, index) => <button disabled={props.exporting} key={item.id} className={item.id === clip.id ? 'active' : ''} onClick={() => props.onSelect(item.id)}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{item.name}</b><small>{formatTime(item.end - item.start)} · {item.completed ? 'COMPLETE' : 'READY'}</small></div></button>)}</aside>
+    <aside className={`process-list ${queueCollapsed ? 'collapsed' : ''}`}><button className="process-queue-head" title={queueCollapsed ? 'Show project clips' : 'Hide project clips'} onClick={() => setQueueCollapsed((value) => !value)}><span><b>PROJECT CLIPS</b><small>{props.session.clips.length} clips · {completedCount} exported</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>{!queueCollapsed && <><div className="process-filter-tabs" role="tablist">{(['all', 'ready', 'exported'] as const).map((tab) => <button key={tab} role="tab" aria-selected={processFilter === tab} onClick={() => setProcessFilter(tab)}>{tab === 'all' ? `All (${totalCount})` : tab === 'ready' ? `Ready (${totalCount - completedCount})` : `Exported (${completedCount})`}</button>)}</div>
+      <div className="process-clip-list">{props.session.clips.filter((item) => processFilter === 'all' || (processFilter === 'ready' ? !item.completed : item.completed)).map((item, index) => { const src = props.session.sources.find((s) => s.id === item.sourceId); return <button disabled={props.exporting} key={item.id} className={`process-clip-item ${item.id === clip.id ? 'active' : ''} ${item.completed ? 'complete' : ''}`} onClick={() => props.onSelect(item.id)}>{src?.thumbnailUrl ? <img src={src.thumbnailUrl} alt="" /> : <span className="clip-thumb-empty">▶</span>}<div><b>{item.name}</b><small>{formatTime(item.start)} — {formatTime(item.end)}</small><small className="clip-status">{item.completed ? '✓ EXPORTED' : 'READY'}</small></div></button>; })}</div>
+      {completedCount > 0 && <button className="process-reset-all ghost" title="Return every exported clip to Ready without deleting exports from disk." disabled={props.exporting} onClick={props.onResetAll}>Reset all to ready</button>}
+      </>}</aside>
     {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
   </section>;
 }
