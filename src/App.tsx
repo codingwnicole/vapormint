@@ -580,12 +580,13 @@ export default function App() {
   if (!session || !preferences) return <div className="loading" role="status" aria-live="polite">Opening Vapormint…</div>;
   const modalOpen = Boolean(modalKey);
 
-  return <div className={`app-shell theme-${preferences.theme ?? 'dark'}`}>
+  return <div className={`app-shell theme-${preferences.theme ?? 'dark'}${preferences.palette && preferences.palette !== 'default' ? ` palette-${preferences.palette}` : ''}`}>
     <a className="skip-link" href="#main-content">Skip to main content</a>
     <header className="titlebar" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       <div className="wordmark"><img src={appIcon} alt="" /><span>VAPORMINT</span></div>
       <nav className="nav-links" aria-label="Main navigation">{nav.map(([name, label]) => <button key={name} disabled={busy} className={view === name ? 'active' : ''} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}>{label}</button>)}</nav>
       <div className="project-name"><i>{session.name}</i></div>
+      <div className="title-theme" role="group" aria-label="Theme"><button aria-pressed={preferences.theme !== 'light'} className={preferences.theme !== 'light' ? 'active' : ''} onClick={() => void savePreferences({ ...preferences, theme: 'dark' })}>Dark</button><button aria-pressed={preferences.theme === 'light'} className={preferences.theme === 'light' ? 'active' : ''} onClick={() => void savePreferences({ ...preferences, theme: 'light' })}>Light</button></div>
       <button className="menu-button" onClick={() => setProjectDialog({ mode: 'create', name: 'Untitled Vapormint' })}>+ Menu</button>
     </header>
 
@@ -656,7 +657,7 @@ export default function App() {
       </section>
     </div>}
     {notice && <aside className={`app-notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}><span>{notice.kind === 'error' ? 'Something needs attention' : 'Project updated'}</span><p>{notice.message}</p><div className="notice-actions">{undo && notice.kind === 'info' && <button className="notice-undo" onClick={() => { setSession(undo.session); setSelectedClipId(undo.selectedClipId); setUndo(undefined); setNotice(undefined); setStatus('Last project change undone.'); }}>Undo</button>}<button aria-label="Dismiss message" onClick={() => { setUndo(undefined); setNotice(undefined); }}>×</button></div></aside>}
-    <footer className="app-statusbar"><span>LOCAL WORKSPACE</span><span className="statusbar-tagline">[ the moments worth keeping ]</span><span className="statusbar-save">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save error' : 'All changes saved'}</span></footer>
+    <footer className="app-statusbar"><span>LOCAL WORKSPACE</span><span className="statusbar-tagline">{session.sources.length} sources · {session.clips.length} clips</span><span className="statusbar-save">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save error' : 'All changes saved'}</span></footer>
   </div>;
 }
 
@@ -670,27 +671,62 @@ function NavIcon({ name }: { name: ViewName }) {
   return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>;
 }
 
+function ClipReel({ session }: { session: StudioSession }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const idx = useRef(0);
+  const [clips, setClips] = useState<{ url: string; poster?: string; start: number; end: number }[]>([]);
+
+  useEffect(() => {
+    window.cuttingFloor.loadReelClips().then((items) => {
+      for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
+      idx.current = 0;
+      setClips(items);
+    }).catch(() => {});
+  }, [session.id, session.clips.length, session.sources.length]);
+
+  useEffect(() => {
+    const v = ref.current;
+    if (!v || !clips.length) return;
+    let url = '';
+    const load = () => {
+      const clip = clips[idx.current % clips.length];
+      if (url !== clip.url) { url = clip.url; v.src = clip.url; }
+      const seekPlay = () => { v.currentTime = clip.start; v.play().catch(() => {}); };
+      if (v.readyState >= 1) seekPlay(); else v.addEventListener('loadedmetadata', seekPlay, { once: true });
+    };
+    const onTime = () => { const clip = clips[idx.current % clips.length]; if (clip && v.currentTime >= clip.end - 0.05) { idx.current++; load(); } };
+    v.addEventListener('timeupdate', onTime);
+    load();
+    return () => v.removeEventListener('timeupdate', onTime);
+  }, [clips]);
+
+  if (!clips.length) {
+    const thumb = session.sources.find((s) => s.thumbnailUrl);
+    return thumb?.thumbnailUrl ? <img src={thumb.thumbnailUrl} alt="" /> : <span className="preview-empty">&#9654;</span>;
+  }
+  return <video ref={ref} poster={clips[0]?.poster} muted playsInline />;
+}
+
 function Home({ session, projects, busy, onNewProject, onOpenProject, onRenameProject, onDeleteProject, onImport, onSeason, onWatch, onDownload, onOpenSource }: { session: StudioSession; projects: ProjectCard[]; busy: boolean; onNewProject(): void; onOpenProject(id: string): void; onRenameProject(id: string): void; onDeleteProject(id: string): void; onImport(): void; onSeason(): void; onWatch(): void; onDownload(url: string): boolean; onOpenSource(id: string): void }) {
   const [url, setUrl] = useState('');
   const projectIndex = String(projects.findIndex((p) => p.id === session.id) + 1).padStart(2, '0');
-  const previewSource = session.sources.find((s) => s.thumbnailUrl);
   return <section className="page home-page">
     <div className="home-intro">
       <span className="eyebrow">({projectIndex} / WORKSPACE)</span>
       <h1>The cutting floor<span className="accent-dot">.</span></h1>
       <p className="home-desc">Find your moments. Keep them beautifully.</p>
       <div className="home-actions">
-        <button disabled={busy} onClick={onSeason}><span>&#128193;</span>Add season folder</button>
-        <button disabled={busy} onClick={onImport}><span>&#128206;</span>Add video files</button>
-        <button disabled={busy} onClick={onWatch}><span>&#128065;</span>Watch folder</button>
-        <button disabled={busy} onClick={onNewProject}><span>&#43;</span>New project</button>
+        <button disabled={busy} onClick={onSeason}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 5h7l2-2h7v14H2z" /></svg>Add season folder</button>
+        <button disabled={busy} onClick={onImport}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M3 15v2h14v-2" /></svg>Add video files</button>
+        <button disabled={busy} onClick={onWatch}><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" /><circle cx="10" cy="10" r="3" /></svg>Watch folder</button>
+        <button disabled={busy} onClick={onNewProject}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>New project</button>
       </div>
       <div className="home-link">
-        <div className="download-row"><span className="link-icon">&#128279;</span><input aria-label="Public video link" placeholder="Paste a public video link" disabled={busy} value={url} onChange={(event) => setUrl(event.target.value)} /><button className="ghost download-go" disabled={busy || !url.trim()} onClick={() => { if (onDownload(url.trim())) setUrl(''); }}>&rarr;</button></div>
+        <div className="download-row"><svg className="link-icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M8 12l4-4m-2.5-2.5L12 3a3 3 0 0 1 4.2 4.2L13.5 10m-7 0L4 12.8A3 3 0 0 0 8.2 17L10.5 14.5" /></svg><input aria-label="Public video link" placeholder="Paste a public video link" disabled={busy} value={url} onChange={(event) => setUrl(event.target.value)} /><button className="ghost download-go" disabled={busy || !url.trim()} onClick={() => { if (onDownload(url.trim())) setUrl(''); }}>&rarr;</button></div>
       </div>
     </div>
     <div className="home-preview">
-      <div className="preview-frame">{previewSource?.thumbnailUrl ? <img src={previewSource.thumbnailUrl} alt="" /> : <span className="preview-empty">&#9654;</span>}</div>
+      <div className="preview-frame"><ClipReel session={session} /></div>
       <div className="preview-info">
         <span className="accent-dot" style={{ fontSize: 10 }}>&bull;</span>
         <div className="preview-name"><h2>{session.name}</h2></div>
@@ -946,8 +982,10 @@ function ProcessClips(props: ProcessProps) {
       setReceiptLoading(false);
     }
   };
+  const completedCount = props.session.clips.filter((c) => c.completed).length;
+  const totalCount = props.session.clips.length;
   return <section className={`process-page ${queueCollapsed ? 'queue-collapsed' : ''}`}>
-    <div className="process-header"><h1 className="process-heading">Process clips<span className="accent-dot">.</span></h1><span className="process-clip-label">{clip.name}</span></div>
+    <div className="process-header"><h1 className="process-heading">Process clips<span className="accent-dot">.</span></h1><span className="process-clip-label">{clip.name}</span><span className="process-progress-label">{completedCount}/{totalCount} exported</span><button className="primary process-header-export" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export →'}</button></div>
     <div className="recipe-panel">
       <div className="recipe-title"><div><span className="eyebrow">ACTIVE RECIPE</span></div>{props.exporting ? <div className="process-export-strip" aria-live="polite"><div><b>{clipProgress?.message ?? 'Preparing export'}</b><small>{Math.round(clipProgress?.percent ?? 0)}% · {elapsed} elapsed</small><span><i style={{ width: `${clipProgress?.percent ?? 0}%` }} /></span></div><button className="ghost" onClick={props.onCancel}>Stop safely</button></div> : <div className="reorder"><button aria-label="Move clip earlier" onClick={() => props.onMove(clip.id, -1)}>↑</button><button aria-label="Move clip later" onClick={() => props.onMove(clip.id, 1)}>↓</button><button onClick={() => props.onRemove(clip.id)}>Remove</button></div>}</div>
       <div className="crop-editor">
@@ -1045,6 +1083,7 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
       <div className="settings-main">
         {settingsTab === 'appearance' && <><h2 className="settings-section-title">Appearance</h2>
           <div className="settings-row"><span className="settings-label">Theme</span><div className="theme-toggle" role="group" aria-label="Theme"><button aria-pressed={preferences.theme === 'dark'} className={preferences.theme !== 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'dark' })}>Dark</button><button aria-pressed={preferences.theme === 'light'} className={preferences.theme === 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'light' })}>Light</button></div><span className="settings-desc">Choose the overall interface theme.</span></div>
+          <div className="settings-row"><span className="settings-label">Palette</span><select value={preferences.palette ?? 'default'} onChange={(event) => void onPreferences({ ...preferences, palette: event.target.value as StudioPreferences['palette'] })}><option value="default">Default (A24 Red)</option><option value="notflix">Notflix</option><option value="wholou">Wholou</option><option value="disnee-plus">Disnee Plus</option></select><span className="settings-desc">Accent color palette inspired by your favorite streaming service.</span></div>
           <div className="settings-row"><span className="settings-label">Expert mode</span><label className="toggle-switch"><input type="checkbox" checked={preferences.expertMode} onChange={(event) => void onPreferences({ ...preferences, expertMode: event.target.checked })} /><span className="toggle-track" /></label><span className="settings-desc">Show field order, rotation, color management, and compatibility controls.</span></div>
           <button className="ghost show-welcome" onClick={onShowWelcome}>Show welcome guide</button>
         </>}
@@ -1058,7 +1097,7 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
           <div className="settings-row"><span className="settings-label">Finished clips + frames</span><span className="settings-desc">Exported clips, GIFs, and extracted frames.</span><div className="location-row"><input readOnly title={preferences.exportPath} value={preferences.exportPath} /><button className="ghost" onClick={() => choose('exportPath')}>Browse &rarr;</button></div></div>
         </>}
         {settingsTab === 'about' && <><h2 className="settings-section-title">About Vapormint</h2>
-          <p className="settings-about-text">Version 2.1.4 &middot; Local video processing with VapourSynth and FFmpeg.</p>
+          <p className="settings-about-text">Version 2.2.0 &middot; Local video processing with VapourSynth and FFmpeg.</p>
           <button className="ghost" onClick={() => void window.cuttingFloor.checkForUpdates()}>Check for updates</button>
           <div className="settings-runtime">{tools.map(([name, ok, version]) => <div key={name}><i className={ok ? 'ok' : 'missing'} /><span>{name}</span>{version && ok ? <em className="tool-version" title={version}>{version}</em> : null}<b>{ok ? 'READY' : 'MISSING'}</b></div>)}</div>
           {runtime.error && <div className="runtime-error" role="alert"><b>Pipeline check details</b><p>{runtime.error}</p><button className="ghost" onClick={() => void copyDiagnostics()}>Copy diagnostics</button></div>}
@@ -1070,7 +1109,7 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
         <div className="settings-pipeline"><h4>Pipeline status</h4><span>{tools.every(([, ok]) => ok) ? 'All tools ready' : 'Some tools missing'}</span><div className="settings-runtime">{tools.map(([name, ok]) => <div key={name}><span>{name}</span><b>{ok ? 'Ready' : 'Missing'}</b></div>)}</div></div>
       </aside>
     </div>
-    <footer className="settings-footer"><div className="settings-footer-links"><span>Privacy</span><span>Terms</span><span>Licenses</span></div><span>Vapormint 2.1.4</span></footer>
+    <footer className="settings-footer"><div className="settings-footer-links"><button onClick={() => onNotice('Vapormint processes everything locally. No video data leaves your machine.')}>Privacy</button><button onClick={() => onNotice('Vapormint is provided as-is for personal use. No warranty expressed or implied.')}>Terms</button><button onClick={() => onNotice('Vapormint uses FFmpeg (LGPL), VapourSynth (LGPL), yt-dlp (Unlicense), Electron (MIT), React (MIT).')}>Licenses</button></div><span>Vapormint 2.2.0</span></footer>
   </section>;
 }
 

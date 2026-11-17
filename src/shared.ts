@@ -189,6 +189,7 @@ export interface StudioPreferences {
   exportPath: string;
   expertMode: boolean;
   theme?: 'dark' | 'light';
+  palette?: 'default' | 'notflix' | 'wholou' | 'disnee-plus';
   onboardingComplete?: boolean;
   activeProjectId?: string;
 }
@@ -296,8 +297,16 @@ export function assertPublicVideoUrl(value: string) {
   return url.href;
 }
 
+export interface ReelClip {
+  url: string;
+  poster?: string;
+  start: number;
+  end: number;
+}
+
 export interface DesktopApi {
   loadWorkspace(): Promise<WorkspaceState>;
+  loadReelClips(): Promise<ReelClip[]>;
   createProject(name: string): Promise<WorkspaceState>;
   openProject(id: string): Promise<WorkspaceState>;
   renameProject(id: string, name: string): Promise<WorkspaceState>;

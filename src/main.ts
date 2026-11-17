@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
-import { buildReceipt, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
+import { buildReceipt, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type ReelClip, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'local-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
@@ -281,6 +281,39 @@ async function saveSession(session: StudioSession) {
   configureWatchers(activeSession, preferences);
 }
 
+async function loadReelClips(): Promise<ReelClip[]> {
+  const preferences = await loadPreferences();
+  const entries = await readdir(preferences.libraryPath, { withFileTypes: true }).catch(() => []);
+  const clips: ReelClip[] = [];
+  for (const entry of entries.filter((e) => e.isDirectory())) {
+    try {
+      const session = JSON.parse(await readFile(sessionFile(entry.name, preferences), 'utf8')) as StudioSession;
+      for (const clip of session.clips) {
+        const source = session.sources.find((s) => s.id === clip.sourceId);
+        if (!source) continue;
+        const filePath = source.playbackPath ?? source.sourcePath;
+        try { await access(filePath); } catch { continue; }
+        const url = pathToFileURL(filePath).href.replace('file:', 'local-media:');
+        const poster = source.thumbnailPath ? pathToFileURL(source.thumbnailPath).href.replace('file:', 'local-media:') : undefined;
+        clips.push({ url, poster, start: clip.start, end: clip.end });
+      }
+      if (!session.clips.length) {
+        for (const source of session.sources) {
+          const filePath = source.playbackPath ?? source.sourcePath;
+          try { await access(filePath); } catch { continue; }
+          const dur = source.sourceAnalysis?.duration ?? 0;
+          if (dur <= 0) continue;
+          const url = pathToFileURL(filePath).href.replace('file:', 'local-media:');
+          const poster = source.thumbnailPath ? pathToFileURL(source.thumbnailPath).href.replace('file:', 'local-media:') : undefined;
+          const count = Math.min(4, Math.max(1, Math.floor(dur / 10)));
+          for (let i = 0; i < count; i++) { const start = Math.random() * Math.max(0, dur - 5); clips.push({ url, poster, start, end: Math.min(start + 5, dur) }); }
+        }
+      }
+    } catch { /* Skip unreadable projects. */ }
+  }
+  return clips;
+}
+
 function sourceFiles(folder: string) {
   return readdir(folder, { withFileTypes: true }).then((entries) => entries.filter((entry) => entry.isFile() && videoExtensions.has(path.extname(entry.name).toLowerCase())).map((entry) => path.join(folder, entry.name)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })));
 }
@@ -483,6 +516,7 @@ const hasInstanceLock = app.requestSingleInstanceLock();
 if (!hasInstanceLock) app.quit();
 else void app.whenReady().then(async () => {
   ipcMain.handle('workspace:load', loadWorkspace);
+  ipcMain.handle('reel:clips', loadReelClips);
   ipcMain.handle('project:create', (_event, name: string) => createProject(name));
   ipcMain.handle('project:open', (_event, id: string) => openProject(id));
   ipcMain.handle('project:rename', (_event, id: string, name: string) => renameProject(id, name));

@@ -17,7 +17,7 @@ assert(css.includes('.info-tip b { color: var(--ink); }'));
 assert(css.includes('.toggle-row label { border: 1px solid var(--line);'));
 assert(css.includes('.theme-light .analysis-popover[open] { background: var(--panel); }'));
 assert(css.includes('.primary, .ghost { border: 1px solid var(--accent); padding: 10px 16px;'));
-assert(css.includes('.theme-light .title-theme button.active { color: #ffffff; background: var(--ink); }'));
+assert(css.includes('.theme-light .title-theme button.active { color: var(--on-accent); background: var(--accent); }'));
 assert(css.includes('.crop-preview video { width: 100%; height: 100%; object-fit: contain;'));
 assert(css.includes('.recipe-panel { min-height: 0; overflow: auto;'));
 assert(css.includes('.crop-editor { min-height: clamp(400px, 60vh, 720px);'));

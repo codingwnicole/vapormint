@@ -3,6 +3,7 @@ import type { DesktopApi, ExportProgress, ExportRequest, FeedbackReport, PixelEv
 
 const api: DesktopApi = {
   loadWorkspace: () => ipcRenderer.invoke('workspace:load'),
+  loadReelClips: () => ipcRenderer.invoke('reel:clips'),
   createProject: (name: string) => ipcRenderer.invoke('project:create', name),
   openProject: (id: string) => ipcRenderer.invoke('project:open', id),
   renameProject: (id: string, name: string) => ipcRenderer.invoke('project:rename', id, name),
