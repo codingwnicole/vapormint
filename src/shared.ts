@@ -273,16 +273,6 @@ export interface RenderReceipt {
   clipRange: { start: number; end: number };
 }
 
-export interface ReceiptSummary {
-  clipId: string;
-  clipName: string;
-  rendered: string;
-  engine: 'VapourSynth' | 'FFmpeg compatibility';
-  fallback: boolean;
-  warningCount: number;
-  outputPath: string;
-}
-
 export function downloadCookieArguments(browser: DownloadBrowser = 'none') {
   if (!['none', 'edge', 'chrome', 'firefox', 'brave'].includes(browser)) throw new Error('That browser is not supported for video sign-in.');
   return browser === 'none' ? [] : ['--cookies-from-browser', browser];
@@ -532,14 +522,14 @@ export function suggestedRecipePatch(analysis: SourceAnalysis): Partial<ClipReci
   // Always apply at least a safe baseline: community consensus is that VS should always do
   // *something*. Fine detail is the gentlest tier; it carries implicit sharpening so dedicated
   // sharpening stays off unless denoise is off (which only the explicit As-is alternative does).
-  const denoise = analysis.noise && analysis.noise >= 12 ? 'Balanced' : analysis.noise && analysis.noise >= 8 ? 'Fine detail' : 'Fine detail';
-  const sharpen = denoise === 'Off' && ((banding >= 8 && banding < 20) || (analysis.noise && analysis.noise >= 8)) ? 'Natural' : 'Off';
+  const denoise = analysis.noise && analysis.noise >= 12 ? 'Balanced' : 'Fine detail';
+  const sharpen = 'Off' as const;
   return {
     look: 'Custom',
     denoise,
     denoiseStrength: denoise === 'Fine detail' ? 0.9 : denoise === 'Balanced' ? 0.8 : 0,
     sharpen,
-    sharpenStrength: sharpen === 'Natural' ? 0.5 : 0,
+    sharpenStrength: 0,
     restoration: 'Off',
     deband,
     motion: 'Original',

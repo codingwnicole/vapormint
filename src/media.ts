@@ -386,29 +386,20 @@ function resolvedColor(recipe: ClipRecipe, sourceColor: string) {
   return 'SDR Rec.709';
 }
 
-function colorFilters(recipe: ClipRecipe, sourceColor: string) {
+function colorPipeline(recipe: ClipRecipe, sourceColor: string) {
   const choice = resolvedColor(recipe, sourceColor);
+  const enc709 = ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv'] as const;
   if (choice === 'Preserve') {
-    if (/pq|smpte2084/i.test(sourceColor)) return ['setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084:range=limited'];
-    if (/hlg|arib-std-b67/i.test(sourceColor)) return ['setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=arib-std-b67:range=limited'];
-    if (/601|170m/i.test(sourceColor)) return ['setparams=colorspace=smpte170m:color_primaries=smpte170m:color_trc=bt709:range=limited'];
-    if (/709/i.test(sourceColor)) return ['setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=limited'];
-    return [];
+    if (/pq|smpte2084/i.test(sourceColor)) return { filters: ['setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=smpte2084:range=limited'], encoding: ['-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc', '-color_range', 'tv'] as const };
+    if (/hlg|arib-std-b67/i.test(sourceColor)) return { filters: ['setparams=colorspace=bt2020nc:color_primaries=bt2020:color_trc=arib-std-b67:range=limited'], encoding: ['-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'tv'] as const };
+    if (/601|170m/i.test(sourceColor)) return { filters: ['setparams=colorspace=smpte170m:color_primaries=smpte170m:color_trc=bt709:range=limited'], encoding: ['-color_primaries', 'smpte170m', '-color_trc', 'bt709', '-colorspace', 'smpte170m', '-color_range', 'tv'] as const };
+    if (/709/i.test(sourceColor)) return { filters: ['setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=limited'], encoding: enc709 };
+    return { filters: [] as string[], encoding: enc709 };
   }
-  if (choice === 'Convert 601 to 709') return ['zscale=matrixin=smpte170m:transferin=bt709:primariesin=smpte170m:rangein=limited:matrix=bt709:transfer=bt709:primaries=bt709:range=limited:dither=error_diffusion'];
-  if (choice === 'HDR PQ to SDR') return ['zscale=matrixin=bt2020nc:transferin=smpte2084:primariesin=bt2020:rangein=limited:matrix=gbr:transfer=linear:primaries=bt2020:npl=100', 'format=gbrpf32le', 'tonemap=hable:desat=2', 'zscale=matrix=bt709:transfer=bt709:primaries=bt709:range=limited:dither=error_diffusion'];
-  if (choice === 'HDR HLG to SDR') return ['zscale=matrixin=bt2020nc:transferin=arib-std-b67:primariesin=bt2020:rangein=limited:matrix=gbr:transfer=linear:primaries=bt2020:npl=100', 'format=gbrpf32le', 'tonemap=hable:desat=2', 'zscale=matrix=bt709:transfer=bt709:primaries=bt709:range=limited:dither=error_diffusion'];
-  return ['setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=limited'];
-}
-
-function colorEncodingArguments(recipe: ClipRecipe, sourceColor: string) {
-  const choice = resolvedColor(recipe, sourceColor);
-  if (choice === 'Preserve') {
-    if (/pq|smpte2084/i.test(sourceColor)) return ['-color_primaries', 'bt2020', '-color_trc', 'smpte2084', '-colorspace', 'bt2020nc', '-color_range', 'tv'];
-    if (/hlg|arib-std-b67/i.test(sourceColor)) return ['-color_primaries', 'bt2020', '-color_trc', 'arib-std-b67', '-colorspace', 'bt2020nc', '-color_range', 'tv'];
-    if (/601|170m/i.test(sourceColor)) return ['-color_primaries', 'smpte170m', '-color_trc', 'bt709', '-colorspace', 'smpte170m', '-color_range', 'tv'];
-  }
-  return ['-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv'];
+  if (choice === 'Convert 601 to 709') return { filters: ['zscale=matrixin=smpte170m:transferin=bt709:primariesin=smpte170m:rangein=limited:matrix=bt709:transfer=bt709:primaries=bt709:range=limited:dither=error_diffusion'], encoding: enc709 };
+  if (choice === 'HDR PQ to SDR') return { filters: ['zscale=matrixin=bt2020nc:transferin=smpte2084:primariesin=bt2020:rangein=limited:matrix=gbr:transfer=linear:primaries=bt2020:npl=100', 'format=gbrpf32le', 'tonemap=hable:desat=2', 'zscale=matrix=bt709:transfer=bt709:primaries=bt709:range=limited:dither=error_diffusion'], encoding: enc709 };
+  if (choice === 'HDR HLG to SDR') return { filters: ['zscale=matrixin=bt2020nc:transferin=arib-std-b67:primariesin=bt2020:rangein=limited:matrix=gbr:transfer=linear:primaries=bt2020:npl=100', 'format=gbrpf32le', 'tonemap=hable:desat=2', 'zscale=matrix=bt709:transfer=bt709:primaries=bt709:range=limited:dither=error_diffusion'], encoding: enc709 };
+  return { filters: ['setparams=colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=limited'], encoding: enc709 };
 }
 
 export function compileVapourSynthScript(request: ExportRequest) {
@@ -489,13 +480,14 @@ function codecArguments(recipe: ClipRecipe) {
 
 function vapourSynthFfmpegArguments(request: ExportRequest, outputPath: string) {
   const { clip, source } = request;
-  const filters = [...colorFilters(clip.recipe, source.sourceAnalysis.colorSpace)];
+  const color = colorPipeline(clip.recipe, source.sourceAnalysis.colorSpace);
+  const filters = [...color.filters];
   if (clip.recipe.deband) filters.push('deband=1thr=0.02:2thr=0.02:3thr=0.02:4thr=0.02:range=16:blur=1');
   if (clip.recipe.fade) filters.push('fade=t=in:st=0:d=0.20', `fade=t=out:st=${Math.max(0, clip.end - clip.start - 0.25).toFixed(3)}:d=0.25`);
   const args = ['-hide_banner', '-y', '-f', 'yuv4mpegpipe', '-i', 'pipe:0', '-ss', clip.start.toFixed(6), '-t', (clip.end - clip.start).toFixed(6), '-i', source.sourcePath, '-map', '0:v:0', '-map', '1:a:0?'];
   if (filters.length) args.push('-vf', filters.join(','));
   if (clip.recipe.reverse) args.push('-af', 'areverse');
-  args.push(...codecArguments(clip.recipe), ...colorEncodingArguments(clip.recipe, source.sourceAnalysis.colorSpace), '-shortest', '-progress', 'pipe:2', outputPath);
+  args.push(...codecArguments(clip.recipe), ...color.encoding, '-shortest', '-progress', 'pipe:2', outputPath);
   return args;
 }
 
@@ -516,7 +508,8 @@ function compatibilityFilters(request: ExportRequest) {
   if (recipe.denoise === 'Fine detail' && recipe.denoiseStrength > 0.01) filters.push(`nlmeans=s=${Math.max(1, recipe.denoiseStrength * 2.4).toFixed(2)}:p=5:r=9`);
   if (recipe.sharpen === 'Natural' && recipe.sharpenStrength > 0.01) filters.push(`unsharp=5:5:${recipe.sharpenStrength.toFixed(2)}:5:5:0`);
   if (recipe.sharpen === 'Adaptive' && recipe.sharpenStrength > 0.01) filters.push(`cas=${Math.min(1, recipe.sharpenStrength).toFixed(2)}`);
-  filters.push(...colorFilters(recipe, colorSpace));
+  const color = colorPipeline(recipe, colorSpace);
+  filters.push(...color.filters);
   if (recipe.deband) filters.push('deband=1thr=0.02:2thr=0.02:3thr=0.02:4thr=0.02:range=16:blur=1');
   if (recipe.motion !== 'Original') filters.push(`minterpolate=fps=${recipe.motion === '60 fps' ? 60 : 30}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`);
   if (recipe.fade) filters.push('fade=t=in:st=0:d=0.20', `fade=t=out:st=${Math.max(0, request.clip.end - request.clip.start - 0.25).toFixed(3)}:d=0.25`);
@@ -528,19 +521,19 @@ function compatibilityArguments(request: ExportRequest, outputPath: string) {
   const { clip, source } = request;
   const args = ['-hide_banner', '-y', '-ss', clip.start.toFixed(6), '-t', (clip.end - clip.start).toFixed(6), '-i', source.sourcePath, '-vf', compatibilityFilters(request).join(',')];
   if (clip.recipe.reverse) args.push('-af', 'areverse');
-  args.push(...codecArguments(clip.recipe), ...colorEncodingArguments(clip.recipe, source.sourceAnalysis.colorSpace), '-progress', 'pipe:2', outputPath);
+  args.push(...codecArguments(clip.recipe), ...colorPipeline(clip.recipe, source.sourceAnalysis.colorSpace).encoding, '-progress', 'pipe:2', outputPath);
   return args;
 }
 
 function compatibilityReason(recipe: ClipRecipe, failure: string) {
-  const substitutions = [failure];
-  if (recipe.deinterlace.startsWith('QTGMC')) substitutions.push('QTGMC was replaced by FFmpeg Bwdif at double field rate.');
-  if (recipe.deinterlace === 'Inverse Telecine') substitutions.push('VFM/VDecimate was replaced by fieldmatch/decimate.');
-  if (recipe.restoration !== 'Off') substitutions.push('Descale restoration was replaced by Lanczos.');
-  if (recipe.denoise !== 'Off') substitutions.push('BM3D was replaced by HQDN3D/NLMeans.');
-  if (recipe.sharpen !== 'Off') substitutions.push('VapourSynth CAS was replaced by FFmpeg sharpening.');
-  if (recipe.motion !== 'Original') substitutions.push('MVTools FlowFPS was replaced by minterpolate.');
-  return substitutions.join(' ');
+  return [failure,
+    recipe.deinterlace.startsWith('QTGMC') && 'QTGMC was replaced by FFmpeg Bwdif at double field rate.',
+    recipe.deinterlace === 'Inverse Telecine' && 'VFM/VDecimate was replaced by fieldmatch/decimate.',
+    recipe.restoration !== 'Off' && 'Descale restoration was replaced by Lanczos.',
+    recipe.denoise !== 'Off' && 'BM3D was replaced by HQDN3D/NLMeans.',
+    recipe.sharpen !== 'Off' && 'VapourSynth CAS was replaced by FFmpeg sharpening.',
+    recipe.motion !== 'Original' && 'MVTools FlowFPS was replaced by minterpolate.',
+  ].filter(Boolean).join(' ');
 }
 
 function runFfmpeg(command: string, args: string[], duration: number, signal: AbortSignal, onProgress: (percent: number, message: string) => void, message: string) {

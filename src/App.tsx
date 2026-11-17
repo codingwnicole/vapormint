@@ -581,14 +581,15 @@ export default function App() {
   const modalOpen = Boolean(modalKey);
 
   return <div className={`app-shell theme-${preferences.theme ?? 'dark'}`}>
+    <a className="skip-link" href="#main-content">Skip to main content</a>
     <header className="titlebar" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       <div className="wordmark"><img src={appIcon} alt="" /><span>VAPORMINT</span></div>
+      <nav className="nav-links" aria-label="Main navigation">{nav.map(([name, label]) => <button key={name} disabled={busy} className={view === name ? 'active' : ''} aria-current={view === name ? 'page' : undefined} onClick={() => setView(name)}>{label}</button>)}</nav>
       <div className="project-name"><i>{session.name}</i></div>
       <button className="menu-button" onClick={() => setProjectDialog({ mode: 'create', name: 'Untitled Vapormint' })}>+ Menu</button>
     </header>
 
-    {updateInfo?.status === 'available' && !updateDismissed && <div className="update-banner" role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">✦</span><div className="update-banner-copy"><b>Version {updateInfo.version} is available</b><small>A new release of Vapormint is out — grab it from the release page.</small></div><button className="update-banner-cta" onClick={() => void window.cuttingFloor.applyUpdate()}>Get update</button><button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
-    {updateInfo?.status === 'error' && !updateDismissed && <div className="update-banner update-banner-error" role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">!</span><div className="update-banner-copy"><b>Update check failed</b><small>{updateInfo.message}</small></div><button className="update-banner-retry" onClick={() => { setUpdateDismissed(false); setUpdateInfo(undefined); void window.cuttingFloor.checkForUpdates(); }}>Retry</button><button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
+    {updateInfo && !updateDismissed && (updateInfo.status === 'available' || updateInfo.status === 'error') && <div className={`update-banner${updateInfo.status === 'error' ? ' update-banner-error' : ''}`} role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">{updateInfo.status === 'error' ? '!' : '✦'}</span><div className="update-banner-copy"><b>{updateInfo.status === 'error' ? 'Update check failed' : `Version ${updateInfo.version} is available`}</b><small>{updateInfo.status === 'error' ? updateInfo.message : 'A new release of Vapormint is out — grab it from the release page.'}</small></div>{updateInfo.status === 'error' ? <button className="update-banner-retry" onClick={() => { setUpdateDismissed(false); setUpdateInfo(undefined); void window.cuttingFloor.checkForUpdates(); }}>Retry</button> : <button className="update-banner-cta" onClick={() => void window.cuttingFloor.applyUpdate()}>Get update</button>}<button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
 
     <aside className="sidebar" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       <img className="rail-logo" src={appIcon} alt="Vapormint" />
@@ -596,7 +597,7 @@ export default function App() {
       <div className="runtime-rail" title={runtime.error ?? 'Bundled local pipeline ready'} aria-label={`Bundled pipeline: ${runtime.error ?? 'all required tools ready'}`}>{[runtime.ffmpeg, runtime.ffprobe, runtime.vspipe, runtime.ytDlp, runtime.vapourSynthPlugins].map((ok, index) => <span key={index} className={ok ? 'ok' : 'missing'} />)}</div>
     </aside>
 
-    <main aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
+    <main id="main-content" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       {view === 'home' && <Home session={session} projects={projects} busy={busy} onNewProject={() => setProjectDialog({ mode: 'create', name: 'Untitled Vapormint' })} onOpenProject={openProject} onRenameProject={(id) => { const project = projects.find((item) => item.id === id); setProjectDialog({ mode: 'rename', id, name: project?.name ?? 'Untitled Vapormint' }); }} onDeleteProject={deleteProject} onImport={() => importVideos('files')} onSeason={() => importVideos('season')} onWatch={() => importVideos('watch')} onDownload={prepareDownload} onOpenSource={(id) => { setSession({ ...session, activeSourceId: id }); setView('find'); }} />}
       {view === 'find' && <FindMoments
         session={session} activeSource={activeSource} video={video} playhead={playhead} markIn={markIn} markOut={markOut}
@@ -1035,12 +1036,12 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
     ['yt-dlp', runtime.ytDlp, runtime.versions?.ytDlp],
     ['VapourSynth plugins', runtime.vapourSynthPlugins, runtime.versions?.vapourSynth ? `core ${runtime.versions.vapourSynth}` : undefined],
   ];
-  const [settingsTab, setSettingsTab] = useState<'general' | 'appearance' | 'folders' | 'processing' | 'about'>('general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'appearance' | 'folders' | 'about'>('general');
   const previewSource = session.sources.find((s) => s.thumbnailUrl);
   return <section className="page settings-page">
     <header className="settings-head"><div><span className="eyebrow">(04 / SETTINGS)</span><h1>Your workspace<span className="accent-dot">.</span><span className="accent-star">*</span></h1></div></header>
     <div className="settings-layout">
-      <nav className="settings-nav" role="tablist" aria-label="Settings sections">{([['general', 'General'], ['appearance', 'Appearance'], ['folders', 'Folders'], ['processing', 'Processing'], ['about', 'About']] as const).map(([key, label]) => <button key={key} role="tab" aria-selected={settingsTab === key} className={settingsTab === key ? 'active' : ''} onClick={() => setSettingsTab(key as typeof settingsTab)}>{label}</button>)}</nav>
+      <nav className="settings-nav" role="tablist" aria-label="Settings sections">{([['general', 'General'], ['appearance', 'Appearance'], ['folders', 'Folders'], ['about', 'About']] as const).map(([key, label]) => <button key={key} role="tab" aria-selected={settingsTab === key} className={settingsTab === key ? 'active' : ''} onClick={() => setSettingsTab(key as typeof settingsTab)}>{label}</button>)}</nav>
       <div className="settings-main">
         {settingsTab === 'appearance' && <><h2 className="settings-section-title">Appearance</h2>
           <div className="settings-row"><span className="settings-label">Theme</span><div className="theme-toggle" role="group" aria-label="Theme"><button aria-pressed={preferences.theme === 'dark'} className={preferences.theme !== 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'dark' })}>Dark</button><button aria-pressed={preferences.theme === 'light'} className={preferences.theme === 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'light' })}>Light</button></div><span className="settings-desc">Choose the overall interface theme.</span></div>
@@ -1055,8 +1056,6 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
           <div className="settings-row"><span className="settings-label">Project library</span><span className="settings-desc">Main project data, timelines and metadata.</span><div className="location-row"><input readOnly title={preferences.libraryPath} value={preferences.libraryPath} /><button className="ghost" onClick={() => choose('libraryPath')}>Browse &rarr;</button></div></div>
           <div className="settings-row"><span className="settings-label">Source masters</span><span className="settings-desc">Original video files (read-only).</span><div className="location-row"><input readOnly title={preferences.downloadPath} value={preferences.downloadPath} /><button className="ghost" onClick={() => choose('downloadPath')}>Browse &rarr;</button></div></div>
           <div className="settings-row"><span className="settings-label">Finished clips + frames</span><span className="settings-desc">Exported clips, GIFs, and extracted frames.</span><div className="location-row"><input readOnly title={preferences.exportPath} value={preferences.exportPath} /><button className="ghost" onClick={() => choose('exportPath')}>Browse &rarr;</button></div></div>
-        </>}
-        {settingsTab === 'processing' && <><h2 className="settings-section-title">Processing preferences</h2>
         </>}
         {settingsTab === 'about' && <><h2 className="settings-section-title">About Vapormint</h2>
           <p className="settings-about-text">Version 2.1.3 &middot; Local video processing with VapourSynth and FFmpeg.</p>

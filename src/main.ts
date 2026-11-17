@@ -548,27 +548,20 @@ else void app.whenReady().then(async () => {
 
   ipcMain.handle('update:check', async () => {
     const current = app.getVersion();
+    const reply = (info: UpdateInfo) => { sendUpdate(info); return info; };
     try {
       sendUpdate({ status: 'downloading', version: current, message: 'Checking for updates…', percent: 0 });
       const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } });
       if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
       const releases = (await res.json()) as Array<{ tag_name: string; html_url: string; draft?: boolean; prerelease?: boolean }>;
       const stable = releases.find((r) => !r.draft);
-      if (!stable) {
-        sendUpdate({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
-        return { status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 };
-      }
+      if (!stable) return reply({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
       latestRelease = { tag: stable.tag_name, url: stable.html_url };
-      if (isNewer(stable.tag_name, current)) {
-        sendUpdate({ status: 'available', version: stable.tag_name, message: `Version ${stable.tag_name} is available — click "Install update" to download it`, percent: 0 });
-        return { status: 'available', version: stable.tag_name, message: `Version ${stable.tag_name} is available — click "Install update" to download it`, percent: 0 };
-      }
-      sendUpdate({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
-      return { status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 };
+      if (isNewer(stable.tag_name, current)) return reply({ status: 'available', version: stable.tag_name, message: `Version ${stable.tag_name} is available — click "Install update" to download it`, percent: 0 });
+      return reply({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      sendUpdate({ status: 'error', version: current, message: `Update check failed (${msg})`, percent: 0 });
-      return { status: 'error', version: current, message: `Update check failed (${msg})`, percent: 0 };
+      return reply({ status: 'error', version: current, message: `Update check failed (${msg})`, percent: 0 });
     }
   });
   ipcMain.handle('update:apply', async () => {
