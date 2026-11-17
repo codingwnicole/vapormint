@@ -6,7 +6,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
-import { assertPublicVideoUrl, downloadCookieArguments, downloadFailureMessage, frameTimingEvidence, outputDimensions, runtimeVersionArguments, scanEvidenceFromSamples, type ClipRecipe, type DownloadBrowser, type ExportRequest, type FrameTimingEvidence, type GuidanceConfidence, type PixelEvidence, type PreviewSettings, type RuntimeStatus, type SourceAnalysis, type StudioSource, type TaskProgress } from './shared';
+import { assertPublicVideoUrl, downloadCookieArguments, downloadFailureMessage, frameTimingEvidence, outputDimensions, scanEvidenceFromSamples, type ClipRecipe, type DownloadBrowser, type ExportRequest, type FrameTimingEvidence, type GuidanceConfidence, type PixelEvidence, type PreviewSettings, type RuntimeStatus, type SourceAnalysis, type StudioSource, type TaskProgress } from './shared';
 
 export interface ProcessingResult {
   engine: 'VapourSynth' | 'FFmpeg compatibility';
@@ -165,7 +165,7 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
   };
   const entries = await Promise.all(tools.map(async ([key, name]) => {
     try {
-      const { stdout } = await capture(await executable(name), runtimeVersionArguments(name));
+      const { stdout } = await capture(await executable(name), [name === 'ffmpeg' || name === 'ffprobe' ? '-version' : '--version']);
       return [key, true, parseVersion(name, stdout)] as const;
     } catch {
       return [key, false, ''] as const;

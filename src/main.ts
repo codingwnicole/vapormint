@@ -1,15 +1,17 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron';
 import squirrelStartup from 'electron-squirrel-startup';
-import { watch, type FSWatcher, createWriteStream } from 'node:fs';
+import { watch, type FSWatcher, createWriteStream, createReadStream } from 'node:fs';
 import { access, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import { constants, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
-import { buildReceipt, receiptFileName, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
-import { ensurePreferenceFolders } from './storage';
+import { buildReceipt, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
+
+protocol.registerSchemesAsPrivileged([{ scheme: 'local-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
 if (squirrelStartup) app.quit();
 
@@ -84,9 +86,10 @@ const emptySession = (name = 'Untitled Vapormint'): StudioSession => ({
 
 async function atomicJson(file: string, value: unknown) {
   await mkdir(path.dirname(file), { recursive: true });
-  const temporary = `${file}.tmp`;
-  await writeFile(temporary, JSON.stringify(value, null, 2), 'utf8');
-  await rename(temporary, file);
+  const data = JSON.stringify(value, null, 2);
+  const tmp = file + '.tmp';
+  // ponytail: rename can ENOENT on Windows (antivirus scans .tmp); fall back to direct write
+  try { await writeFile(tmp, data, 'utf8'); await rename(tmp, file); } catch { await writeFile(file, data, 'utf8'); }
 }
 
 // ponytail: migrate from "LQ's Cutting Floor" on first launch
@@ -106,6 +109,15 @@ async function loadPreferences() {
     }
     return defaultPreferences();
   }
+}
+
+async function ensurePreferenceFolders(preferences: StudioPreferences, fallback?: StudioPreferences) {
+  const resolved = { ...preferences };
+  for (const key of ['libraryPath', 'downloadPath', 'exportPath'] as const) {
+    try { await mkdir(resolved[key], { recursive: true }); }
+    catch (error) { if (!fallback) throw error; resolved[key] = fallback[key]; await mkdir(resolved[key], { recursive: true }); }
+  }
+  return resolved;
 }
 
 async function persistPreferences(preferences: StudioPreferences, allowFallback = false) {
@@ -153,7 +165,8 @@ async function refreshSourceUrls(source: StudioSource) {
   if (playbackPath) try { await access(playbackPath); } catch { playbackPath = undefined; }
   let thumbnailUrl: string | undefined;
   if (source.thumbnailPath) try { await access(source.thumbnailPath); thumbnailUrl = pathToFileURL(source.thumbnailPath).href; } catch { /* No cached thumbnail. */ }
-  return { ...source, playbackPath, fileUrl: pathToFileURL(playbackPath ?? source.sourcePath).href, thumbnailUrl, missing };
+  const fileUrl = pathToFileURL(playbackPath ?? source.sourcePath).href.replace('file:', 'local-media:');
+  return { ...source, playbackPath, fileUrl, thumbnailUrl: thumbnailUrl?.replace('file:', 'local-media:'), missing };
 }
 
 async function loadProject(id: string, preferences: StudioPreferences) {
@@ -429,7 +442,7 @@ async function exportClip(request: ExportRequest) {
     try {
       const vapourSynthScriptPath = request.clip.recipe.saveVapourSynthScript ? `${outputPath}.vpy` : undefined;
       const receipt = buildReceipt({ clip: clipResult, source: request.source, outputPath, engine: result.engine, fallbackReason: result.fallbackReason, pngFramesPath: result.pngFramesPath, warnings: result.warnings ?? [], vapourSynthScriptPath });
-      const receiptPath = path.join(path.dirname(outputPath), receiptFileName(clipResult));
+      const receiptPath = path.join(path.dirname(outputPath), `${safeFileName(clipResult.name)}.receipt.json`);
       await writeFile(receiptPath, JSON.stringify(receipt, null, 2), 'utf8');
       clipResult.receiptPath = receiptPath;
     } catch { /* Receipt is a best-effort audit artifact; never block the master on it. */ }
@@ -441,8 +454,8 @@ async function exportClip(request: ExportRequest) {
 
 function windowTheme(theme: StudioPreferences['theme']) {
   return theme === 'light'
-    ? { background: '#f6f8fc', overlay: { color: '#ffffff', symbolColor: '#182238', height: 42 } }
-    : { background: '#0b0d0f', overlay: { color: '#08090a', symbolColor: '#d5d8d2', height: 42 } };
+    ? { background: '#ffffff', overlay: { color: '#ffffff', symbolColor: '#000000', height: 42 } }
+    : { background: '#000000', overlay: { color: '#000000', symbolColor: '#ffffff', height: 42 } };
 }
 
 function applyWindowTheme(theme: StudioPreferences['theme']) {
@@ -583,6 +596,17 @@ else void app.whenReady().then(async () => {
     await shell.openExternal(parsed.href);
   });
 
+  protocol.handle('local-media', async (req) => {
+    const filePath = decodeURIComponent(new URL(req.url.replace('local-media:', 'file:')).pathname).replace(/^\/([A-Z]:)/, '$1');
+    if (!filePath.match(/\.(mp4|mkv|mov|avi|webm|ts|m2ts|mts|mpg|mpeg|wmv|flv|gif|png|jpg|jpeg|webp|bmp|tiff?)$/i)) return new Response('Forbidden', { status: 403 });
+    const total = (await stat(filePath)).size;
+    const range = req.headers.get('range')?.match(/bytes=(\d+)-(\d*)/);
+    const start = range ? Number(range[1]) : 0;
+    const end = range?.[2] ? Number(range[2]) : total - 1;
+    const headers: Record<string, string> = { 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1) };
+    if (range) headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
+    return new Response(Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream, { status: range ? 206 : 200, headers });
+  });
   createWindow((await loadPreferences()).theme);
   app.on('second-instance', () => { if (mainWindow?.isMinimized()) mainWindow.restore(); mainWindow?.show(); mainWindow?.focus(); });
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) void loadPreferences().then((preferences) => createWindow(preferences.theme)); });

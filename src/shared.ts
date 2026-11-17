@@ -283,8 +283,6 @@ export interface ReceiptSummary {
   outputPath: string;
 }
 
-export const runtimeVersionArguments = (name: 'ffmpeg' | 'ffprobe' | 'vspipe' | 'yt-dlp') => [name === 'ffmpeg' || name === 'ffprobe' ? '-version' : '--version'];
-
 export function downloadCookieArguments(browser: DownloadBrowser = 'none') {
   if (!['none', 'edge', 'chrome', 'firefox', 'brave'].includes(browser)) throw new Error('That browser is not supported for video sign-in.');
   return browser === 'none' ? [] : ['--cookies-from-browser', browser];
@@ -423,16 +421,12 @@ export function sourceGuidanceItems(analysis: SourceAnalysis): SourceGuidanceIte
       analysis.noise !== undefined ? `noise ${analysis.noise}` : '',
       analysis.banding !== undefined ? `banding ${analysis.banding}` : '',
     ].filter(Boolean).join(', ');
-    const recommendation = analysis.banding !== undefined && analysis.banding >= 20 ? 'Strong banding was measured: enable Deband in the recipe.' : analysis.banding !== undefined && analysis.banding >= 8 ? 'Mild banding was measured: enable Deband and confirm against the source.' : analysis.noise !== undefined && analysis.noise >= 12 ? 'High noise was measured: enable Denoise (Balanced).' : analysis.noise !== undefined && analysis.noise >= 8 ? 'Moderate noise was measured: enable Denoise (Fine detail).' : 'The measured noise and banding are low: leave cleanup off and let your eyes decide.';
+    const recommendation = analysis.banding !== undefined && analysis.banding >= 20 ? 'Strong banding was measured — self-tune enables Deband automatically. Verify in gradients and sky areas.' : analysis.banding !== undefined && analysis.banding >= 8 ? 'Mild banding was measured: enable Deband only if you can see it at full size.' : analysis.noise !== undefined && analysis.noise >= 12 ? 'High noise was measured: enable Denoise (Balanced).' : analysis.noise !== undefined && analysis.noise >= 8 ? 'Moderate noise was measured: enable Denoise (Fine detail).' : 'The measured noise and banding are low: leave cleanup off and let your eyes decide.';
     items.push({ title: 'Detail treatment measured', confidence: 'Medium', evidence: `${measured} ${analysis.bandingNote ? `(${analysis.bandingNote})` : ''} from a distributed decode of ${analysis.width}x${analysis.height} frames.`, recommendation, check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup. Denoise adds implicit sharpening — avoid stacking both unless the output still looks soft.' });
   } else {
     items.push({ title: 'Detail treatment requires your eyes', confidence: 'High', evidence: 'Resolution and container bitrate do not measure noise, sharpness, blocking, or banding reliably across different scenes.', recommendation: 'Denoise, sharpen, deband, Descale, and motion smoothing stay off until the shot visibly needs them.', check: 'Inspect faces, hair, text, gradients, and fast motion at 100% before enabling cleanup.' });
   }
   return items;
-}
-
-export function sourceGuidance(analysis: SourceAnalysis): string[] {
-  return sourceGuidanceItems(analysis).map((item) => `${item.confidence} confidence — ${item.title}: ${item.recommendation} Evidence: ${item.evidence} Check: ${item.check}`);
 }
 
 export function sourceVerdict(analysis: SourceAnalysis) {
@@ -447,55 +441,24 @@ export function sourceVerdict(analysis: SourceAnalysis) {
 // Each item is conservative: it states what was measured, not a command, and it only
 // fires when there is a real disagreement or a high-confidence reading worth surfacing.
 export function pixelAdvice(analysis: SourceAnalysis): string[] {
-  const notes: string[] = [];
   const scan = analysis.scanEvidence;
-  const classification = scan?.classification ?? analysis.scanType;
-  const highConfidence = scan?.confidence === 'High' || scan?.confidence === 'Medium';
-  // 1. Container cadence tag vs. what the decoded frames actually look like.
-  if (analysis.scanType === 'Interlaced' && classification === 'Progressive' && highConfidence) {
-    notes.push(`Tagged interlaced, but the sampled frames look progressive. ${scan ? `${scan.progressive} of ${scan.progressive + scan.topFirst + scan.bottomFirst} sampled windows were progressive.` : ''} You may not need deinterlacing — verify in playback.`);
-  } else if (analysis.scanType === 'Progressive' && classification === 'Interlaced' && scan?.confidence === 'High') {
-    notes.push('Tagged progressive, but the decoded pixels show interlacing. Combing is likely present; a same-rate deinterlace is worth trying.');
-  } else if (classification === 'Mixed or uncertain' && scan) {
-    notes.push('The cadence mixes interlaced and progressive windows. Treat it as a review, not a defect: a conservative same-rate Bwdif is the safe starting point if playback shows combing.');
-  }
-  // 2. Banding measured in the pixels.
-  if (analysis.banding !== undefined && analysis.banding >= 20) {
-    notes.push(`Strong banding was measured in decoded gradients (${analysis.banding} on a 0–100 scale). Enabling Deband should help smooth sky, skin, and matte areas.`);
-  } else if (analysis.banding !== undefined && analysis.banding >= 8) {
-    notes.push(`Mild banding was measured (${analysis.banding}). It may be subtle in playback; enable Deband only if you can see it at full size.`);
-  }
-  // 3. Noise measured in the pixels.
-  if (analysis.noise !== undefined && analysis.noise >= 12) {
-    notes.push(`Moderate-to-high noise was measured (${analysis.noise}). A light Denoise (Balanced) should tidy shadows and grain without smearing detail.`);
-  } else if (analysis.noise !== undefined && analysis.noise >= 8) {
-    notes.push(`Mild noise was measured (${analysis.noise}). Fine-detail denoise is optional; inspect grain at output size first.`);
-  }
-  // 4. HDR tag vs. safe assumption.
-  if (analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG') {
-    notes.push(`${analysis.hdr} is explicitly tagged. Convert it to SDR for an SDR master, or keep the HDR signal if your target is HDR.`);
-  }
-  // 5. Low-resolution source: processing cannot recover detail that was never there.
-  if (analysis.height > 0 && analysis.height < 720) {
-    notes.push(`Source is ${analysis.width}×${analysis.height}. Processing cannot recover detail from a low-resolution original — keep sharpening gentle and avoid upscaling beyond the source dimensions.`);
-  }
-  // 6. A freeze/opening issue the decoder flagged — review marker, not corruption.
-  if (analysis.openingIssue || analysis.freezeSample) {
-    notes.push('The decoder flagged a low-motion region. That is a review marker, not a defect: intentional stills and title cards are common. Play the region to confirm.');
-  }
-  // 7. Very low bitrate may indicate a re-encode or web rip.
-  if (analysis.bitrate > 0 && analysis.bitrate < 1500 && analysis.height >= 720) {
-    notes.push(`The container bitrate is only ${Math.round(analysis.bitrate)} kbps for a ${analysis.height}p source. This may be a web rip or re-encode — expect compression artifacts; heavy cleanup can smear what little detail remains.`);
-  }
-  // 8. Denoise adds implicit sharpening — stacking both risks harsh, oversharpened output.
-  if (analysis.noise !== undefined && analysis.noise >= 8) {
-    notes.push('Denoise filters add implicit sharpening as a side effect. If denoise is enabled, keep dedicated sharpening low or off — stacking both produces rigid, oversharpened edges, especially on small subjects or distant shots.');
-  }
-  // 9. Interlaced source: de-interlacing unlocks the true field rate.
-  if (analysis.scanType === 'Interlaced' && classification === 'Interlaced' && highConfidence) {
-    notes.push('This source is interlaced. Without de-interlacing, only half the temporal resolution is accessible and combing will be visible on motion. QTGMC Slow produces visibly sharper output than Fast for quality-critical work.');
-  }
-  return notes;
+  const cls = scan?.classification ?? analysis.scanType;
+  const hc = scan?.confidence === 'High' || scan?.confidence === 'Medium';
+  return ([
+    analysis.scanType === 'Interlaced' && cls === 'Progressive' && hc && `Tagged interlaced, but the sampled frames look progressive. ${scan ? `${scan.progressive} of ${scan.progressive + scan.topFirst + scan.bottomFirst} sampled windows were progressive.` : ''} You may not need deinterlacing — verify in playback.`,
+    analysis.scanType === 'Progressive' && cls === 'Interlaced' && scan?.confidence === 'High' && 'Tagged progressive, but the decoded pixels show interlacing. Combing is likely present; a same-rate deinterlace is worth trying.',
+    cls === 'Mixed or uncertain' && scan && 'The cadence mixes interlaced and progressive windows. Treat it as a review, not a defect: a conservative same-rate Bwdif is the safe starting point if playback shows combing.',
+    analysis.banding !== undefined && analysis.banding >= 20 && `Strong banding was measured in decoded gradients (${analysis.banding} on a 0–100 scale). Deband smooths sky, skin, and matte areas — self-tune enables it automatically for this level.`,
+    analysis.banding !== undefined && analysis.banding >= 8 && analysis.banding < 20 && `Mild banding was measured (${analysis.banding}). It may be subtle in playback; enable Deband only if you can see it at full size.`,
+    analysis.noise !== undefined && analysis.noise >= 12 && `Moderate-to-high noise was measured (${analysis.noise}). A light Denoise (Balanced) should tidy shadows and grain without smearing detail.`,
+    analysis.noise !== undefined && analysis.noise >= 8 && analysis.noise < 12 && `Mild noise was measured (${analysis.noise}). Fine-detail denoise is optional; inspect grain at output size first.`,
+    (analysis.hdr === 'HDR PQ' || analysis.hdr === 'HDR HLG') && `${analysis.hdr} is explicitly tagged. Convert it to SDR for an SDR master, or keep the HDR signal if your target is HDR.`,
+    analysis.height > 0 && analysis.height < 720 && `Source is ${analysis.width}×${analysis.height}. Processing cannot recover detail from a low-resolution original — keep sharpening gentle and avoid upscaling beyond the source dimensions.`,
+    (analysis.openingIssue || analysis.freezeSample) && 'The decoder flagged a low-motion region. That is a review marker, not a defect: intentional stills and title cards are common. Play the region to confirm.',
+    analysis.bitrate > 0 && analysis.bitrate < 1500 && analysis.height >= 720 && `The container bitrate is only ${Math.round(analysis.bitrate)} kbps for a ${analysis.height}p source. This may be a web rip or re-encode — expect compression artifacts; heavy cleanup can smear what little detail remains.`,
+    analysis.noise !== undefined && analysis.noise >= 8 && 'Denoise filters add implicit sharpening as a side effect. If denoise is enabled, keep dedicated sharpening low or off — stacking both produces rigid, oversharpened edges, especially on small subjects or distant shots.',
+    analysis.scanType === 'Interlaced' && cls === 'Interlaced' && hc && 'This source is interlaced. Without de-interlacing, only half the temporal resolution is accessible and combing will be visible on motion. QTGMC Slow produces visibly sharper output than Fast for quality-critical work.',
+  ] as const).filter((n): n is string => typeof n === 'string');
 }
 
 export interface SuggestedRecipe {
@@ -640,18 +603,6 @@ export function previewSettingsForEvidence(evidence: PixelEvidence): PreviewSett
   };
 }
 
-/** Monotonic accumulator: fixes only ever accumulate, never revert. */
-export function previewSettingsAbsorb(current: PreviewSettings, next: PreviewSettings): { next: PreviewSettings; changed: boolean } {
-  const merged: PreviewSettings = {
-    deinterlace: current.deinterlace || next.deinterlace,
-    deband: current.deband || next.deband,
-    denoise: current.denoise || next.denoise,
-    sharpen: current.sharpen || next.sharpen,
-  };
-  const changed = merged.deinterlace !== current.deinterlace || merged.deband !== current.deband || merged.denoise !== current.denoise || merged.sharpen !== current.sharpen;
-  return { next: merged, changed };
-}
-
 export interface PreviewLoopStep {
   readonly round: number;
   readonly evidence: PixelEvidence;
@@ -682,28 +633,16 @@ export async function runPreviewLoop(
   for (let round = 1; round <= maxRounds; round++) {
     const evidence = await renderAndAnalyze(settings, round);
     const derived = previewSettingsForEvidence(evidence);
-    const absorb = previewSettingsAbsorb(settings, derived);
-    rounds.push({ round, evidence, applied: absorb.next, newFix: absorb.changed });
-    settings = absorb.next;
+    const merged: PreviewSettings = { deinterlace: settings.deinterlace || derived.deinterlace, deband: settings.deband || derived.deband, denoise: settings.denoise || derived.denoise, sharpen: settings.sharpen || derived.sharpen };
+    const changed = merged.deinterlace !== settings.deinterlace || merged.deband !== settings.deband || merged.denoise !== settings.denoise || merged.sharpen !== settings.sharpen;
+    rounds.push({ round, evidence, applied: merged, newFix: changed });
+    settings = merged;
     const clean = evidence.combPixels < 32 && evidence.distinctLumaLevels > 96 && evidence.neighborDiff < 4.5;
-    if (clean || !absorb.changed) {
+    if (clean || !changed) {
       return { rounds, converged: clean, settings };
     }
   }
   return { rounds, converged: false, settings };
-}
-
-/**
- * Build the PixelEvidence a preview-render hook should pass into runPreviewLoop.
- * The Electron brain (cf_analysis.py) measures combPixels / distinctLumaLevels /
- * noise (neighbor_diff median) directly on the rendered preview's luma frames.
- */
-export function evidenceFromPreviewAnalysis(analysis: { combPixels?: number; distinctLumaLevels?: number; noise?: number }): PixelEvidence {
-  return {
-    combPixels: analysis.combPixels ?? 0,
-    distinctLumaLevels: analysis.distinctLumaLevels ?? 256,
-    neighborDiff: analysis.noise ?? 0,
-  };
 }
 
 /** Convert a converged PreviewSettings into the partial ClipRecipe patch to apply. */
@@ -917,11 +856,6 @@ export function buildReceipt(args: {
   if (vapourSynthScriptPath) receipt.outputs.vapourSynthScript = vapourSynthScriptPath;
   return receipt;
 }
-
-export function receiptFileName(clip: SessionClip) {
-  return `${safeFileName(clip.name)}.receipt.json`;
-}
-
 
 export interface ToolVersionInfo {
   /** Tool key: 'yt-dlp' | 'ffmpeg' | 'ffprobe'. */

@@ -1,20 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
-import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, runtimeVersionArguments, safeFileName, scanEvidenceFromSamples, sourceGuidance, sourceVerdict, setCropEdge, suggestedRecipePatch, suggestedRecipes, buildReceipt, receiptFileName, previewSettingsForEvidence, previewSettingsAbsorb, runPreviewLoop, evidenceFromPreviewAnalysis, previewSettingsToRecipePatch } from './shared.ts';
-import { ensurePreferenceFolders } from './storage.ts';
-
-const storageRoot = await mkdtemp(path.join(tmpdir(), 'lqcf-storage-'));
-try {
-  const blocker = path.join(storageRoot, 'not-a-folder');
-  await writeFile(blocker, 'blocked');
-  const preferences = { libraryPath: path.join(blocker, 'projects'), downloadPath: path.join(blocker, 'downloads'), exportPath: path.join(blocker, 'exports'), expertMode: false, theme: 'dark', onboardingComplete: false } as const;
-  const fallback = { ...preferences, libraryPath: path.join(storageRoot, 'projects'), downloadPath: path.join(storageRoot, 'downloads'), exportPath: path.join(storageRoot, 'exports') };
-  assert.deepEqual(await ensurePreferenceFolders(preferences, fallback), fallback);
-} finally {
-  await rm(storageRoot, { recursive: true, force: true });
-}
+import { aspectRatio, applyLook, assertPublicVideoUrl, defaultRecipe, downloadFailureMessage, downloadCookieArguments, fitCropToAspect, frameTimingEvidence, joinTouchingClips, moveCrop, normalizeClipRange, orientedSourceDimensions, outputDimensions, pixelAdvice, readyWithRecipe, safeFileName, scanEvidenceFromSamples, sourceGuidanceItems, sourceVerdict, setCropEdge, suggestedRecipePatch, suggestedRecipes, buildReceipt, previewSettingsForEvidence, runPreviewLoop, previewSettingsToRecipePatch } from './shared.ts';
 
 assert.deepEqual(normalizeClipRange(2, 1, 10, 25), { start: 1, end: 2 });
 assert.deepEqual(normalizeClipRange(-4, 99, 5, 10), { start: 0, end: 5 });
@@ -89,13 +74,9 @@ assert.equal(noisyProgRecipes.length, 2);
 assert.equal(noisyProgRecipes[0].name, 'Recommended');
 assert.equal(noisyProgRecipes[1].name, 'As-is (no cleanup)');
 assert.deepEqual(noisyProgRecipes[1].patch, { deinterlace: 'Off', denoise: 'Off', denoiseStrength: 0, sharpen: 'Off', sharpenStrength: 0, deband: false, motion: 'Original', colorManagement: 'Preserve' });
-// Clean progressive (no fixes applied) -> single "Recommended" (no alternatives).
+// Clean progressive: safe baseline still applies Fine detail denoise, so "As-is" alternative is offered.
 const cleanProg = { scanType: 'Progressive', fieldOrder: 'tt', hdr: 'SDR Rec.709', scanEvidence: { classification: 'Progressive', confidence: 'High', sampledWindows: 3, sampledSeconds: 9, topFirst: 0, bottomFirst: 0, progressive: 150, uncertain: 2, repeatedFields: 0 }, noise: 1, banding: 0 } as never;
-assert.equal(suggestedRecipes(cleanProg).length, 1);
-assert.deepEqual(runtimeVersionArguments('ffmpeg'), ['-version']);
-assert.deepEqual(runtimeVersionArguments('ffprobe'), ['-version']);
-assert.deepEqual(runtimeVersionArguments('vspipe'), ['--version']);
-assert.deepEqual(runtimeVersionArguments('yt-dlp'), ['--version']);
+assert.equal(suggestedRecipes(cleanProg).length, 2);
 const youtubeAuthError = 'ERROR: [youtube] abc: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication.';
 assert.match(downloadFailureMessage(youtubeAuthError), /browser sign-in/i);
 assert.deepEqual(downloadCookieArguments('edge'), ['--cookies-from-browser', 'edge']);
@@ -115,14 +96,14 @@ const edited = readyWithRecipe(clips[0], { ...defaultRecipe(), sharpenStrength: 
 assert.equal(edited.completed, false);
 assert.equal(edited.outputPath, undefined);
 const confirmedInterlaced = { sampledWindows: 3, sampledSeconds: 9, topFirst: 150, bottomFirst: 0, progressive: 4, uncertain: 2, repeatedFields: 0, classification: 'Interlaced', confidence: 'High' } as const;
-assert.deepEqual(suggestedRecipePatch({ hdr: 'HDR PQ', scanType: 'Interlaced', fieldOrder: 'tt', colorSpace: 'bt2020', duration: 1, width: 1, height: 1, fps: 24, codec: '', format: '', pixelFormat: '', bitDepth: 10, bitrate: 0, colorTransfer: '', variableFrameRate: false, scanEvidence: confirmedInterlaced, qualitySummary: '' }), { look: 'Custom', denoise: 'Off', denoiseStrength: 0, sharpen: 'Off', sharpenStrength: 0, restoration: 'Off', deband: false, motion: 'Original', deinterlace: 'Bwdif', fieldOrder: 'Top first', colorManagement: 'HDR PQ to SDR' });
+assert.deepEqual(suggestedRecipePatch({ hdr: 'HDR PQ', scanType: 'Interlaced', fieldOrder: 'tt', colorSpace: 'bt2020', duration: 1, width: 1, height: 1, fps: 24, codec: '', format: '', pixelFormat: '', bitDepth: 10, bitrate: 0, colorTransfer: '', variableFrameRate: false, scanEvidence: confirmedInterlaced, qualitySummary: '' }), { look: 'Custom', denoise: 'Fine detail', denoiseStrength: 0.9, sharpen: 'Off', sharpenStrength: 0, restoration: 'Off', deband: false, motion: 'Original', deinterlace: 'Bwdif', fieldOrder: 'Top first', colorManagement: 'HDR PQ to SDR' });
 const distributed = scanEvidenceFromSamples(['Multi frame detection: TFF: 60 BFF: 0 Progressive: 2 Undetermined: 0', 'Multi frame detection: TFF: 60 BFF: 0 Progressive: 1 Undetermined: 0']);
 assert.equal(distributed?.classification, 'Interlaced');
 assert.equal(distributed?.confidence, 'High');
 assert.equal(frameTimingEvidence([[0, 1 / 24, 2 / 24, 3 / 24, 4 / 24, 5 / 24, 6 / 24, 7 / 24, 8 / 24, 9 / 24, 10 / 24, 11 / 24, 12 / 24]]).kind, 'Constant sample');
 assert.equal(frameTimingEvidence([[0, .04, .08, .12, .20, .24, .28, .32, .40, .44, .48, .52, .60]]).kind, 'Variable sample');
 const unknownAnalysis = { hdr: 'Unknown', scanType: 'Unknown', fieldOrder: 'unknown', colorSpace: 'Unspecified', duration: 3, width: 1920, height: 1080, fps: 30, codec: 'h264', format: 'mp4', pixelFormat: 'yuv420p', bitDepth: 8, bitrate: 1000, colorTransfer: 'unknown', variableFrameRate: false, qualitySummary: '' } as const;
-const guidance = sourceGuidance(unknownAnalysis).join(' ');
+const guidance = sourceGuidanceItems(unknownAnalysis).map(item => `${item.confidence} ${item.title} ${item.recommendation} ${item.evidence} ${item.check}`).join(' ');
 assert.match(sourceVerdict(unknownAnalysis), /Cadence not yet confirmed by sampling/);
 assert.match(guidance, /Cadence needs review|Unknown cadence/);
 assert.match(guidance, /Frame timing not verified/);
@@ -156,9 +137,6 @@ assert.equal(fb.fallbackReason, 'plugin missing');
 assert.equal(fb.outputs.pngFramesFolder, 'C:\\frames');
 assert.equal(fb.outputs.vapourSynthScript, undefined);
 assert.equal(fb.warnings.length, 0);
-// receiptFileName: stable, safe, .receipt.json suffix.
-assert.equal(receiptFileName({ name: 'My Clip' } as never), 'My Clip.receipt.json');
-assert.equal(receiptFileName({ name: 'a/b\\c:d' } as never), 'a-b-c-d.receipt.json');
 console.log('receipt self-check passed');
 
 // ── M3: self-tuning preview loop (mirrors Rust cf-orchestration tests) ────────────
@@ -173,7 +151,7 @@ console.log('receipt self-check passed');
   assert.ok(!previewSettingsForEvidence(banded).denoise, 'banded frame is not noise');
   const clean = { combPixels: 0, distinctLumaLevels: 240, neighborDiff: 1.0 };
   const cs = previewSettingsForEvidence(clean);
-  assert.ok(!cs.deinterlace && !cs.deband && !cs.denoise && !cs.sharpen, 'clean → no fixes');
+  assert.ok(!cs.deinterlace && !cs.deband && cs.denoise && !cs.sharpen, 'clean → safe baseline denoise only');
   // A "soft" frame (levels>96, comb<32, low noise) is exactly the is_clean() region,
   // so for_evidence returns the clean default before the sharpen branch fires — this
   // matches the Rust logic, where soft() is only reachable when is_clean() is also true.
@@ -184,15 +162,6 @@ console.log('receipt self-check passed');
   assert.ok(c.deinterlace, 'high comb → deinterlace');
   assert.ok(c.denoise, 'interlaced preview also denoise');
   assert.ok(!c.deband && !c.sharpen);
-}
-// Absorb is monotonic: fixes only accumulate, never revert.
-{
-  const none = { deinterlace: false, deband: false, denoise: false, sharpen: false };
-  const some = { deinterlace: true, deband: false, denoise: true, sharpen: false };
-  const merged = previewSettingsAbsorb(none, some).next;
-  assert.deepEqual(merged, some);
-  // Absorbing `none` into `some` changes nothing (already has the fixes).
-  assert.equal(previewSettingsAbsorb(some, none).changed, false);
 }
 // Loop convergence: a preview that improves each round converges.
 {
@@ -229,15 +198,6 @@ console.log('receipt self-check passed');
   const result = await runPreviewLoop(start, 0, async () => { throw new Error('should not run'); });
   assert.equal(result.rounds.length, 0);
   assert.deepEqual(result.settings, start);
-}
-// evidenceFromPreviewAnalysis maps brain fields onto PixelEvidence.
-{
-  const ev = evidenceFromPreviewAnalysis({ combPixels: 50, distinctLumaLevels: 30, noise: 3.0 });
-  assert.deepEqual(ev, { combPixels: 50, distinctLumaLevels: 30, neighborDiff: 3.0 });
-  const empty = evidenceFromPreviewAnalysis({});
-  assert.equal(empty.combPixels, 0);
-  assert.equal(empty.distinctLumaLevels, 256);
-  assert.equal(empty.neighborDiff, 0);
 }
 // previewSettingsToRecipePatch maps converged settings onto the recipe.
 {

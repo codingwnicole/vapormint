@@ -20,12 +20,10 @@ import {
   previewSettingsForEvidence,
   previewSettingsToRecipePatch,
   runPreviewLoop,
-  evidenceFromPreviewAnalysis,
   readyWithRecipe,
   setCropEdge,
   suggestedRecipePatch,
   suggestedRecipes,
-  sourceGuidance,
   sourceGuidanceItems,
   sourceVerdict,
   type ClipRecipe,
@@ -476,7 +474,7 @@ export default function App() {
         setTuneStatus(`Round ${round} · rendering preview`);
         return window.cuttingFloor.tunePreview({ source, clip: selectedClip, projectName: session.name, exportRoot: exportRootOverride ?? session.exportPath ?? preferences.exportPath }, settings);
       };
-      const initialEvidence = evidenceFromPreviewAnalysis(source.sourceAnalysis);
+      const initialEvidence = { combPixels: source.sourceAnalysis.combPixels ?? 0, distinctLumaLevels: source.sourceAnalysis.distinctLumaLevels ?? 256, neighborDiff: source.sourceAnalysis.noise ?? 0 };
       const result = await runPreviewLoop(previewSettingsForEvidence(initialEvidence), 5, renderAndAnalyze);
       stop();
       const patch = previewSettingsToRecipePatch(result.settings);
@@ -585,9 +583,8 @@ export default function App() {
   return <div className={`app-shell theme-${preferences.theme ?? 'dark'}`}>
     <header className="titlebar" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       <div className="wordmark"><img src={appIcon} alt="" /><span>VAPORMINT</span></div>
-      <div className="project-name"><span className="status-dot" />{session.name}</div>
-      <button className="titlebar-check-update" title="Check the Vapormint release page for a newer version." onClick={() => { setUpdateDismissed(false); setUpdateInfo({ status: 'downloading', version: '', message: 'Checking for updates…', percent: 0 }); void window.cuttingFloor.checkForUpdates(); }}>↻ Check for updates</button>
-      <div className="title-theme" role="group" aria-label="Appearance"><button aria-pressed={preferences.theme === 'light'} className={preferences.theme === 'light' ? 'active' : ''} onClick={() => void savePreferences({ ...preferences, theme: 'light' })}>Light</button><button aria-pressed={preferences.theme !== 'light'} className={preferences.theme !== 'light' ? 'active' : ''} onClick={() => void savePreferences({ ...preferences, theme: 'dark' })}>Dark</button></div>
+      <div className="project-name"><i>{session.name}</i></div>
+      <button className="menu-button" onClick={() => setProjectDialog({ mode: 'create', name: 'Untitled Vapormint' })}>+ Menu</button>
     </header>
 
     {updateInfo?.status === 'available' && !updateDismissed && <div className="update-banner" role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">✦</span><div className="update-banner-copy"><b>Version {updateInfo.version} is available</b><small>A new release of Vapormint is out — grab it from the release page.</small></div><button className="update-banner-cta" onClick={() => void window.cuttingFloor.applyUpdate()}>Get update</button><button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
@@ -658,6 +655,7 @@ export default function App() {
       </section>
     </div>}
     {notice && <aside className={`app-notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}><span>{notice.kind === 'error' ? 'Something needs attention' : 'Project updated'}</span><p>{notice.message}</p><div className="notice-actions">{undo && notice.kind === 'info' && <button className="notice-undo" onClick={() => { setSession(undo.session); setSelectedClipId(undo.selectedClipId); setUndo(undefined); setNotice(undefined); setStatus('Last project change undone.'); }}>Undo</button>}<button aria-label="Dismiss message" onClick={() => { setUndo(undefined); setNotice(undefined); }}>×</button></div></aside>}
+    <footer className="app-statusbar"><span>LOCAL WORKSPACE</span><span className="statusbar-tagline">[ the moments worth keeping ]</span><span className="statusbar-save">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save error' : 'All changes saved'}</span></footer>
   </div>;
 }
 
@@ -673,52 +671,43 @@ function NavIcon({ name }: { name: ViewName }) {
 
 function Home({ session, projects, busy, onNewProject, onOpenProject, onRenameProject, onDeleteProject, onImport, onSeason, onWatch, onDownload, onOpenSource }: { session: StudioSession; projects: ProjectCard[]; busy: boolean; onNewProject(): void; onOpenProject(id: string): void; onRenameProject(id: string): void; onDeleteProject(id: string): void; onImport(): void; onSeason(): void; onWatch(): void; onDownload(url: string): boolean; onOpenSource(id: string): void }) {
   const [url, setUrl] = useState('');
+  const projectIndex = String(projects.findIndex((p) => p.id === session.id) + 1).padStart(2, '0');
+  const previewSource = session.sources.find((s) => s.thumbnailUrl);
   return <section className="page home-page">
     <div className="home-intro">
-      <div className="home-ticker"><span>VAPORMINT</span><span className="ticker-dot">·</span><span>LOCAL PROCESSING</span><span className="ticker-dot">·</span><span>VAPoursynth + FFmpeg</span><span className="ticker-dot">·</span><span>NO CLOUD</span></div>
-      <div className="home-brand">
-        <div className="home-symbol" aria-hidden="true">▱</div>
-        <div className="home-wordmark">
-          <h1>Vapormint</h1>
-          <small>[the moments worth keeping]</small>
-        </div>
-      </div>
-      <p className="home-desc">Import a source. Find the moments. Export clean clips. Everything runs locally — your originals are never touched.</p>
+      <span className="eyebrow">({projectIndex} / WORKSPACE)</span>
+      <h1>The cutting floor<span className="accent-dot">.</span></h1>
+      <p className="home-desc">Find your moments. Keep them beautifully.</p>
       <div className="home-actions">
-        <button className="primary" disabled={busy} onClick={onSeason}><b>Add season folder</b><small>Pick a folder — every video inside becomes a source</small></button>
-        <button className="ghost" disabled={busy} onClick={onImport}><b>Add video files</b><small>Select one or more files to import individually</small></button>
-        <button className="ghost" disabled={busy} onClick={onWatch}><b>Watch folder</b><small>Auto-import new files as they appear</small></button>
+        <button disabled={busy} onClick={onSeason}><span>&#128193;</span>Add season folder</button>
+        <button disabled={busy} onClick={onImport}><span>&#128206;</span>Add video files</button>
+        <button disabled={busy} onClick={onWatch}><span>&#128065;</span>Watch folder</button>
+        <button disabled={busy} onClick={onNewProject}><span>&#43;</span>New project</button>
       </div>
       <div className="home-link">
-        <label className="download-label" htmlFor="public-video-url">[PUBLIC VIDEO LINK]</label>
-        <div className="download-row"><input id="public-video-url" placeholder="Paste a public video link" disabled={busy} value={url} onChange={(event) => setUrl(event.target.value)} /><button className="ghost" disabled={busy || !url.trim()} onClick={() => { if (onDownload(url.trim())) setUrl(''); }}>{busy ? 'Working…' : 'Download'}</button></div>
+        <div className="download-row"><span className="link-icon">&#128279;</span><input aria-label="Public video link" placeholder="Paste a public video link" disabled={busy} value={url} onChange={(event) => setUrl(event.target.value)} /><button className="ghost download-go" disabled={busy || !url.trim()} onClick={() => { if (onDownload(url.trim())) setUrl(''); }}>&rarr;</button></div>
       </div>
-      <small className="home-hint">Imports go to the active project. Every public-link download creates its own project.</small>
     </div>
-    <div className="home-library">
-      <div className="recent-head"><div><span>RECENT PROJECTS</span><h2>Pick up where you left off</h2></div><button disabled={busy} className="text-button" onClick={onNewProject}>＋ New project</button></div>
-      <div className="project-grid">{projects.map((project) => <article key={project.id} className={`project-card ${project.id === session.id ? 'active' : ''}`}>
-        <button disabled={busy} className="project-open" onClick={() => onOpenProject(project.id)}>
-          <span className="project-index">{String(projects.indexOf(project) + 1).padStart(2, '0')}</span>
-          <span className="project-thumb"><i>{project.name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase() || 'VM'}</i>{project.thumbnailUrl && <img src={project.thumbnailUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}</span>
-          <span className="project-copy"><b>{project.name}</b><small>{project.completedCount}/{project.clipCount} CLIPS · {project.sourceCount} SOURCE{project.sourceCount === 1 ? '' : 'S'}</small></span>
-        </button>
-        <div className="project-actions"><button disabled={busy} onClick={() => onRenameProject(project.id)}>Rename</button><button disabled={busy} className="danger" onClick={() => onDeleteProject(project.id)}>Delete</button></div>
-      </article>)}</div>
-      <div className="active-project-head"><div><span>ACTIVE PROJECT</span><h2 title={session.name}>{session.name}</h2></div><div className="compact-stats"><Metric value={session.sources.length} label="SOURCES" /><Metric value={session.clips.length} label="CLIPS" /><Metric value={session.clips.filter((clip) => clip.completed).length} label="DONE" /></div></div>
-      <div className="source-grid">
-        {session.sources.map((source) => <button disabled={busy} className="source-card" key={source.id} onClick={() => onOpenSource(source.id)}>
-          <div className="source-frame">{source.thumbnailUrl && <img src={source.thumbnailUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}<span>{source.sourceAnalysis.width} × {source.sourceAnalysis.height}</span><b>{source.sourceAnalysis.fps.toFixed(3)} FPS</b></div>
-          <h3 title={source.episodeLabel}>{source.episodeLabel}{source.finished ? ' ✓' : ''}</h3><p>{source.missing ? 'SOURCE MISSING' : `${source.sourceAnalysis.codec.toUpperCase()} · ${formatTime(source.sourceAnalysis.duration)} · ${Math.round(source.progress * 100)}% REVIEWED`}</p>
-        </button>)}
-        {!session.sources.length && <button disabled={busy} className="source-card empty-card" onClick={onImport}><b>＋</b><h3>ADD YOUR FIRST SOURCE</h3><p>MP4, MOV, MKV, AVI, MTS, WEBM</p></button>}
+    <div className="home-preview">
+      <div className="preview-frame">{previewSource?.thumbnailUrl ? <img src={previewSource.thumbnailUrl} alt="" /> : <span className="preview-empty">&#9654;</span>}</div>
+      <div className="preview-info">
+        <span className="accent-dot" style={{ fontSize: 10 }}>&bull;</span>
+        <div className="preview-name"><h2>{session.name}</h2></div>
+        <span className="preview-stats">{session.sources.length} SOURCE{session.sources.length === 1 ? '' : 'S'} &middot; {session.clips.length} CLIPS</span>
+        <button className="ghost continue-btn" onClick={() => { if (session.sources.length) { onOpenSource(session.sources[0].id); } }}>Continue editing &rarr;</button>
       </div>
+    </div>
+    <div className="home-recent">
+      <div className="recent-head"><h2>Recent projects<span className="accent-dot">.</span></h2><span className="bracket-phrase">[ the last few cuts ]</span></div>
+      <div className="recent-reel">{projects.map((project, i) => <article key={project.id} className={`reel-card ${project.id === session.id ? 'active' : ''}`}>
+        <button disabled={busy} className="reel-open" onClick={() => onOpenProject(project.id)}>
+          <span className="reel-thumb">{project.thumbnailUrl ? <img src={project.thumbnailUrl} alt="" onError={(event) => { event.currentTarget.style.display = 'none'; }} /> : <i>{project.name.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]).join('').toUpperCase() || 'VM'}</i>}</span>
+          <div className="reel-meta"><span className="reel-index">{String(i + 1).padStart(2, '0')}</span><span className="reel-sep">/</span><h3>{project.name}</h3><span className="reel-date">{project.completedCount}/{project.clipCount} clips</span></div>
+        </button>
+        <div className="reel-actions"><button disabled={busy} onClick={() => onRenameProject(project.id)}>Rename</button><button disabled={busy} className="danger" onClick={() => onDeleteProject(project.id)}>Delete</button></div>
+      </article>)}</div>
     </div>
   </section>;
-}
-
-function Metric({ value, label }: { value: number; label: string }) {
-  return <div><strong>{String(value).padStart(2, '0')}</strong><span>{label}</span></div>;
 }
 
 interface FindProps {
@@ -767,11 +756,11 @@ function FindMoments(props: FindProps) {
   const frameDuration = 1 / (activeSource.sourceAnalysis.fps || 30);
   return <section ref={workspace} tabIndex={-1} className="find-page">
     <div className="source-strip">
-      <div><span className="eyebrow">ACTIVE REEL</span><select value={activeSource.id} onChange={(event) => props.onSelectSource(event.target.value)}>{session.sources.map((source) => <option key={source.id} value={source.id}>{source.episodeLabel}</option>)}</select></div>
-      <div className="source-meta">{activeSource.sourceAnalysis.width}×{activeSource.sourceAnalysis.height}<b>{activeSource.sourceAnalysis.fps.toFixed(3)} FPS</b>{activeSource.sourceAnalysis.hdr !== 'Unknown' && <>{activeSource.sourceAnalysis.hdr} · </>}{activeSource.sourceAnalysis.scanType !== 'Unknown' ? activeSource.sourceAnalysis.scanType : 'Progressive'}</div>
-      <details className="analysis-popover"><summary title="Technical source clues and conservative processing recommendations.">Analysis</summary><b>{activeSource.sourceAnalysis.qualitySummary}</b><span>{activeSource.sourceAnalysis.codec} · {activeSource.sourceAnalysis.format} · {activeSource.sourceAnalysis.pixelFormat} · {activeSource.sourceAnalysis.bitDepth}-bit · {activeSource.sourceAnalysis.bitrate ? `${(activeSource.sourceAnalysis.bitrate / 1_000_000).toFixed(1)} Mbps` : 'bitrate unknown'}</span>{sourceGuidance(activeSource.sourceAnalysis).map((item) => <p key={item}>{item}</p>)}<InfoTip>Resolution, bitrate, bit depth, HDR, interlacing, variable frame rate, and freezes are technical clues—not a promise that every frame will look good.</InfoTip><button className="ghost" onClick={props.onReanalyze}>Reanalyze distributed samples</button></details>
+      <h1 className="find-heading">Find moments<span className="accent-dot">.</span></h1>
+      <div className="source-strip-info"><select value={activeSource.id} onChange={(event) => props.onSelectSource(event.target.value)}>{session.sources.map((source) => <option key={source.id} value={source.id}>{source.episodeLabel}</option>)}</select><span className="source-meta">{activeSource.sourceAnalysis.width}&times;{activeSource.sourceAnalysis.height} / {activeSource.sourceAnalysis.fps.toFixed(0)} fps{activeSource.sourceAnalysis.hdr !== 'Unknown' ? ` / ${activeSource.sourceAnalysis.hdr}` : ''}</span></div>
+      <details className="analysis-popover"><summary title="Technical source clues and conservative processing recommendations.">Analysis</summary><b>{activeSource.sourceAnalysis.qualitySummary}</b><span>{activeSource.sourceAnalysis.codec} &middot; {activeSource.sourceAnalysis.format} &middot; {activeSource.sourceAnalysis.pixelFormat} &middot; {activeSource.sourceAnalysis.bitDepth}-bit &middot; {activeSource.sourceAnalysis.bitrate ? `${(activeSource.sourceAnalysis.bitrate / 1_000_000).toFixed(1)} Mbps` : 'bitrate unknown'}</span>{sourceGuidanceItems(activeSource.sourceAnalysis).map((item) => <p key={item.title}>{item.confidence} confidence — {item.title}: {item.recommendation} Evidence: {item.evidence} Check: {item.check}</p>)}<InfoTip>Resolution, bitrate, bit depth, HDR, interlacing, variable frame rate, and freezes are technical clues&mdash;not a promise that every frame will look good.</InfoTip><button className="ghost" onClick={props.onReanalyze}>Reanalyze distributed samples</button></details>
       <button className="ghost" onClick={props.onToggleReviewed}>{activeSource.finished ? '✓ Reviewed' : 'Mark reviewed'}</button>
-      <button className="ghost" onClick={props.onImport}>＋ Add source</button>
+      <button className="ghost" onClick={props.onImport}>+ Add source</button>
     </div>
     <div className="workbench">
       <div className="viewer-panel">
@@ -795,14 +784,17 @@ function FindMoments(props: FindProps) {
         <div className="shortcut-line"><kbd>SPACE</kbd> PLAY / PAUSE <kbd>← →</kbd> FRAME <kbd>SHIFT + ← →</kbd> SECOND <kbd>I</kbd> IN <kbd>O</kbd> OUT <kbd>ENTER</kbd> QUEUE</div>
       </div>
       <aside className={`clip-queue ${queueCollapsed ? 'collapsed' : ''}`}>
-        <button title="Hide the queue to give the player more room." className="queue-head" onClick={props.onToggleQueue} aria-expanded={!queueCollapsed}><span><b>PROJECT CLIP QUEUE</b><small>{session.clips.length} MOMENTS</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>
-        {!queueCollapsed && <div className="queue-body"><div className="queue-tools"><select title="Filter the queue by Ready or Completed state." value={queueFilter} onChange={(event) => props.onFilter(event.target.value as typeof queueFilter)}><option value="all">All clips</option><option value="ready">Ready</option><option value="completed">Completed</option></select><button title="Merge overlapping or frame-adjacent ranges from the same source." onClick={props.onJoin}>Join touching</button><button title="Return every completed clip to Ready without deleting exports from disk." onClick={props.onResetCompleted}>Reset completed</button><button title="Remove all unfinished clips from this project." onClick={props.onClearUnfinished}>Clear ready</button><button title="Render every ready clip in the queue, in order, with per-clip progress. Cancels safely." className={props.exportingCount ? 'primary' : ''} disabled={props.exportingCount > 0 || !session.clips.some((clip) => !clip.completed)} onClick={props.onExportAll}>{props.exportingCount ? `Exporting ${props.exportingCount}…` : 'Export all →'}</button></div>
+        <button title="Hide the queue to give the player more room." className="queue-head" onClick={props.onToggleQueue} aria-expanded={!queueCollapsed}><span><h2 className="selects-title">The selects<span className="accent-dot">.</span></h2><small>({session.clips.length})</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>
+        {!queueCollapsed && <><div className="queue-filter-tabs" role="tablist">{(['all', 'ready', 'completed'] as const).map((tab) => <button key={tab} role="tab" aria-selected={queueFilter === tab} onClick={() => props.onFilter(tab)}>{tab === 'all' ? 'All' : tab === 'ready' ? 'Ready' : 'Exported'}</button>)}</div>
+        <div className="queue-body"><div className="queue-tools"><button title="Merge overlapping or frame-adjacent ranges from the same source." onClick={props.onJoin}>Join touching</button><button title="Return every completed clip to Ready without deleting exports from disk." onClick={props.onResetCompleted}>Reset completed</button><button title="Remove all unfinished clips from this project." onClick={props.onClearUnfinished}>Clear ready</button></div>
         {props.batchProgress && <div className="batch-progress" aria-live="polite"><div className="progress-copy"><span>BATCH EXPORT</span><b>{props.batchProgress.message}</b><small>{props.batchProgress.done} of {props.batchProgress.total} clips</small></div><div className="progress-track" role="progressbar" aria-label="Batch export progress" aria-valuemin={0} aria-valuemax={props.batchProgress.total} aria-valuenow={props.batchProgress.done}><i style={{ width: `${props.batchProgress.total ? Math.round((props.batchProgress.done / props.batchProgress.total) * 100) : 0}%` }} /></div></div>}
         {session.clips.filter((clip) => queueFilter === 'all' || (queueFilter === 'ready' ? !clip.completed : clip.completed)).map((clip, index) => <div className={`queue-item ${clip.completed ? 'complete' : ''}`} key={clip.id}>
           <button className="queue-open" onClick={() => props.onSelectClip(clip.id)}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{clip.name}</b><small>{formatTime(clip.start)} — {formatTime(clip.end)}</small></div></button>
           {clip.completed && <button title="Return this clip to Ready without deleting its previous export from disk." className="queue-state" aria-label={`Mark ${clip.name} unfinished`} onClick={() => props.onMarkUnfinished(clip.id)}>↺</button>}
           <button className="remove" aria-label={`Remove ${clip.name}`} onClick={() => props.onRemove(clip.id)}>×</button>
-        </div>)}{!session.clips.length && <p className="queue-empty">Set I and O points, then press Enter.</p>}</div>}
+        </div>)}{!session.clips.length && <p className="queue-empty">Set I and O points, then press Enter.</p>}
+        <button className="process-queue-btn" disabled={props.exportingCount > 0 || !session.clips.some((clip) => !clip.completed)} onClick={props.onExportAll}>{props.exportingCount ? `Exporting ${props.exportingCount}…` : 'Process queue →'}</button>
+        </div></>}
       </aside>
     </div>
     <footer className="statusbar"><span className="status-dot" />{props.status}<b>{activeSource.displayName}</b></footer>
@@ -882,17 +874,13 @@ function ProcessClips(props: ProcessProps) {
   const [receipt, setReceipt] = useState<RenderReceipt | null>(null);
   const [receiptLoading, setReceiptLoading] = useState(false);
   const previewVideo = useRef<HTMLVideoElement>(null);
+  const clipRef = useRef(props.clip);
+  clipRef.current = props.clip;
+  const scrubbing = useRef(false);
+  const initialSeekKey = useRef('');
   useEffect(() => {
     setRecipeIndex(0);
   }, [props.clip?.id]);
-  useEffect(() => {
-    const element = previewVideo.current;
-    if (!element || !props.clip) return;
-    element.pause();
-    element.currentTime = props.clip.start;
-    setPreviewPosition(props.clip.start);
-    setIsPreviewPlaying(false);
-  }, [props.clip?.id, props.clip?.start]);
   // Auto-tune: when a clip is first selected, run a brief self-tune pass so the
   // recipe and Source Guidance are already evidence-based before the user touches
   // anything. Guarded so it fires once per clip and never while busy/tuning.
@@ -909,7 +897,9 @@ function ProcessClips(props: ProcessProps) {
       const target = event.target as HTMLElement;
       if (event.code !== 'Space' || target.matches('input, select, textarea, button, [contenteditable="true"]')) return;
       event.preventDefault();
-      if (previewVideo.current?.paused) void previewVideo.current.play(); else previewVideo.current?.pause();
+      const el = previewVideo.current;
+      if (!el) return;
+      if (el.paused) { const c = clipRef.current; if (c && (el.currentTime < c.start || el.currentTime >= c.end)) el.currentTime = c.start; void el.play(); } else el.pause();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -935,7 +925,10 @@ function ProcessClips(props: ProcessProps) {
   const manual = (patch: Partial<ClipRecipe>) => props.onRecipe({ ...patch, look: 'Custom' });
   const togglePreview = () => {
     if (!previewVideo.current) return;
-    if (previewVideo.current.paused) void previewVideo.current.play(); else previewVideo.current.pause();
+    if (previewVideo.current.paused) {
+      if (previewVideo.current.currentTime < clip.start || previewVideo.current.currentTime >= clip.end) previewVideo.current.currentTime = clip.start;
+      void previewVideo.current.play();
+    } else previewVideo.current.pause();
   };
   const seekPreview = (value: number) => {
     const next = Math.max(clip.start, Math.min(clip.end, value));
@@ -953,12 +946,13 @@ function ProcessClips(props: ProcessProps) {
     }
   };
   return <section className={`process-page ${queueCollapsed ? 'queue-collapsed' : ''}`}>
+    <div className="process-header"><h1 className="process-heading">Process clips<span className="accent-dot">.</span></h1><span className="process-clip-label">{clip.name}</span></div>
     <div className="recipe-panel">
-      <div className="recipe-title"><div><span className="eyebrow">ACTIVE RECIPE</span><h1>{clip.name}</h1></div>{props.exporting ? <div className="process-export-strip" aria-live="polite"><div><b>{clipProgress?.message ?? 'Preparing export'}</b><small>{Math.round(clipProgress?.percent ?? 0)}% · {elapsed} elapsed</small><span><i style={{ width: `${clipProgress?.percent ?? 0}%` }} /></span></div><button className="ghost" onClick={props.onCancel}>Stop safely</button></div> : <div className="reorder"><button aria-label="Move clip earlier" onClick={() => props.onMove(clip.id, -1)}>↑</button><button aria-label="Move clip later" onClick={() => props.onMove(clip.id, 1)}>↓</button><button onClick={() => props.onRemove(clip.id)}>Remove</button></div>}</div>
+      <div className="recipe-title"><div><span className="eyebrow">ACTIVE RECIPE</span></div>{props.exporting ? <div className="process-export-strip" aria-live="polite"><div><b>{clipProgress?.message ?? 'Preparing export'}</b><small>{Math.round(clipProgress?.percent ?? 0)}% · {elapsed} elapsed</small><span><i style={{ width: `${clipProgress?.percent ?? 0}%` }} /></span></div><button className="ghost" onClick={props.onCancel}>Stop safely</button></div> : <div className="reorder"><button aria-label="Move clip earlier" onClick={() => props.onMove(clip.id, -1)}>↑</button><button aria-label="Move clip later" onClick={() => props.onMove(clip.id, 1)}>↓</button><button onClick={() => props.onRemove(clip.id)}>Remove</button></div>}</div>
       <div className="crop-editor">
         <div className="preview-column"><div className="preview-heading"><span className="eyebrow">CLIP PLAYBACK</span><small>{isPreviewPlaying ? 'Playing · loops the marked range' : 'Paused · press Play when ready'}</small></div><div className="crop-preview" title="Drag inside the crop box to move it; drag an edge or corner to resize it." style={{ aspectRatio: `${oriented.width}/${oriented.height}`, maxWidth: `${oriented.width / Math.max(1, oriented.height) * 64}vh` }}>
-          <video ref={previewVideo} style={videoStyle} src={source.fileUrl} poster={source.thumbnailUrl} muted preload="auto" playsInline onPlay={() => setIsPreviewPlaying(true)} onPause={() => setIsPreviewPlaying(false)} onLoadedMetadata={(event) => { event.currentTarget.currentTime = clip.start; event.currentTarget.playbackRate = previewSpeed; event.currentTarget.pause(); setPreviewPosition(clip.start); }} onTimeUpdate={(event) => { if (event.currentTarget.currentTime >= clip.end) { event.currentTarget.currentTime = clip.start; setPreviewPosition(clip.start); if (!event.currentTarget.paused) void event.currentTarget.play(); } else setPreviewPosition(event.currentTarget.currentTime); }} /><CropMask recipe={recipe} source={source} onChange={props.onRecipe} />
-        </div><div className="preview-timeline"><input aria-label="Clip playhead" title="Scrub within the marked clip." type="range" min={clip.start} max={clip.end} step={previewFrame} value={previewPosition} onChange={(event) => seekPreview(Number(event.target.value))} /><div><span>{formatTime(previewPosition)}</span><span>{formatTime(clip.end)}</span></div></div><div className="preview-transport"><button className="frame-step" aria-label="Move one frame backward" title="Move one frame backward." onClick={() => seekPreview(previewPosition - previewFrame)}>‹</button><button aria-keyshortcuts="Space" className="primary" onClick={togglePreview}>{isPreviewPlaying ? 'Pause clip' : 'Play clip'} <kbd>Space</kbd></button><button className="frame-step" aria-label="Move one frame forward" title="Move one frame forward." onClick={() => seekPreview(previewPosition + previewFrame)}>›</button><span>{formatTime(clip.start)}–{formatTime(clip.end)} · loops inside the marked range</span><div className="speed">{[1, 2, 3].map((value) => <button title={`${value}× changes playback only.`} key={value} className={previewSpeed === value ? 'active' : ''} onClick={() => { setPreviewSpeed(value); if (previewVideo.current) previewVideo.current.playbackRate = value; }}>{value}×</button>)}</div></div></div>
+          <video ref={previewVideo} key={clip.id} style={videoStyle} src={source.fileUrl} poster={source.thumbnailUrl} muted preload="auto" playsInline onPlay={() => setIsPreviewPlaying(true)} onPause={() => setIsPreviewPlaying(false)} onLoadedMetadata={(event) => { event.currentTarget.playbackRate = previewSpeed; }} onCanPlay={(event) => { const key = `${clip.id}:${clip.start}`; if (initialSeekKey.current !== key) { initialSeekKey.current = key; event.currentTarget.pause(); event.currentTarget.currentTime = clip.start; event.currentTarget.playbackRate = previewSpeed; setPreviewPosition(clip.start); setIsPreviewPlaying(false); } }} onTimeUpdate={(event) => { if (scrubbing.current) return; if (event.currentTarget.currentTime >= clip.end) { event.currentTarget.currentTime = clip.start; setPreviewPosition(clip.start); if (!event.currentTarget.paused) void event.currentTarget.play(); } else setPreviewPosition(event.currentTarget.currentTime); }} /><CropMask recipe={recipe} source={source} onChange={props.onRecipe} />
+        </div><div className="preview-timeline"><input aria-label="Clip playhead" title="Scrub within the marked clip." type="range" min={clip.start} max={clip.end} step={previewFrame} value={previewPosition} onPointerDown={() => { scrubbing.current = true; }} onPointerUp={() => { scrubbing.current = false; }} onChange={(event) => seekPreview(Number(event.target.value))} /><div><span>{formatTime(previewPosition)}</span><span>{formatTime(clip.end)}</span></div></div><div className="preview-transport"><button className="frame-step" aria-label="Move one frame backward" title="Move one frame backward." onClick={() => seekPreview(previewPosition - previewFrame)}>‹</button><button aria-keyshortcuts="Space" className="primary" onClick={togglePreview}>{isPreviewPlaying ? 'Pause clip' : 'Play clip'} <kbd>Space</kbd></button><button className="frame-step" aria-label="Move one frame forward" title="Move one frame forward." onClick={() => seekPreview(previewPosition + previewFrame)}>›</button><span>{formatTime(clip.start)}–{formatTime(clip.end)} · loops inside the marked range</span><div className="speed">{[1, 2, 3].map((value) => <button title={`${value}× changes playback only.`} key={value} className={previewSpeed === value ? 'active' : ''} onClick={() => { setPreviewSpeed(value); if (previewVideo.current) previewVideo.current.playbackRate = value; }}>{value}×</button>)}</div></div></div>
       </div>
       <div className="recipe-inspector"><fieldset className="recipe-fields" disabled={props.exporting}>
         <div className="crop-controls"><div className="section-head"><h2>COMPOSITION CROP</h2><span>{aspectRatio(recipe) ? 'RATIO LOCKED' : 'FREE CROP'} · {dimensions.width}×{dimensions.height} OUTPUT</span></div>
@@ -1041,16 +1035,43 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
     ['yt-dlp', runtime.ytDlp, runtime.versions?.ytDlp],
     ['VapourSynth plugins', runtime.vapourSynthPlugins, runtime.versions?.vapourSynth ? `core ${runtime.versions.vapourSynth}` : undefined],
   ];
+  const [settingsTab, setSettingsTab] = useState<'general' | 'appearance' | 'folders' | 'processing' | 'about'>('general');
+  const previewSource = session.sources.find((s) => s.thumbnailUrl);
   return <section className="page settings-page">
-    <header className="settings-head"><div><span className="eyebrow">SETTINGS · WORKSPACE PREFERENCES</span><h1>Settings</h1></div><span>{session.sources.length} sources · {session.sources.filter((source) => source.finished).length} reviewed · LOCAL SESSION</span></header>
-    <div className="settings-intro"><div><span className="eyebrow">VAPORMINT, YOUR WAY</span><h2>Keep every workspace choice close at hand.</h2><p>Originals remain untouched while project locations, watched folders, and processing preferences save locally.</p></div><span className={`settings-saved ${saveState}`} role="status">{saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Couldn’t save' : '✓ Saved'}</span></div>
-    <div className="settings-grid">
-      <article className="settings-card"><div className="settings-card-head"><div><h3>Appearance</h3><p>Choose the workspace treatment that suits your session.</p></div><span>☼</span></div><div className="theme-toggle" role="group" aria-label="Appearance"><button aria-pressed={preferences.theme === 'light'} className={preferences.theme === 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'light' })}>Light</button><button aria-pressed={preferences.theme !== 'light'} className={preferences.theme !== 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'dark' })}>Dark</button></div><button className="ghost show-welcome" onClick={onShowWelcome}>Show welcome guide</button><InfoTip>Dark is the first-launch default. Your selection applies app-wide and is restored before the next session appears.</InfoTip></article>
-      <article className="settings-card"><div className="settings-card-head"><div><h3>Watched folders</h3><p>Control where newly obtained episodes enter this project.</p></div><span>⌕</span></div><div className="settings-note">{session.watchFolders.length ? session.watchFolders.map((folder) => <span title={folder} key={folder}>{folder}</span>) : <span>None configured for this project.</span>}</div><InfoTip>Use Watch folder from Home to add a season location. New sources retain their episode identity.</InfoTip></article>
-      <article className="settings-card wide"><div className="settings-card-head"><div><h3>Project locations</h3><p>Separate session data, downloaded masters, and finished products without moving originals.</p></div><span>▣</span></div><div className="settings-locations"><Field label="PROJECT / SESSION LIBRARY"><div className="location-row"><input readOnly title={preferences.libraryPath} value={preferences.libraryPath} /><button className="ghost" onClick={() => choose('libraryPath')}>Choose</button></div></Field><Field label="DOWNLOADED SOURCE MASTERS"><div className="location-row"><input readOnly title={preferences.downloadPath} value={preferences.downloadPath} /><button className="ghost" onClick={() => choose('downloadPath')}>Choose</button></div></Field><Field label="FINISHED CLIPS + PNG FRAMES"><div className="location-row"><input readOnly title={preferences.exportPath} value={preferences.exportPath} /><button className="ghost" onClick={() => choose('exportPath')}>Choose</button></div></Field></div></article>
-      <article className="settings-card"><div className="settings-card-head"><div><h3>Project and processing</h3><p>Name this session and choose how much recipe detail to expose.</p></div><span>⌘</span></div><Field label="PROJECT NAME"><div className="location-row"><input value={session.name} maxLength={100} onChange={(event) => onSession({ ...session, name: event.target.value })} /></div></Field><label className="expert-toggle"><input type="checkbox" checked={preferences.expertMode} onChange={(event) => void onPreferences({ ...preferences, expertMode: event.target.checked })} /><span><b>EXPERT MODE</b><small>Show field order, rotation, color management, and compatibility controls.</small></span></label></article>
-      <article className="settings-card"><div className="settings-card-head"><div><h3>Local pipeline</h3><p>The bundled tools used for downloads, analysis, previews, and exports.</p></div><span>↯</span></div><div className="settings-runtime">{tools.map(([name, ok, version]) => <div key={name}><i className={ok ? 'ok' : 'missing'} /><span>{name}</span>{version && ok ? <em className="tool-version" title={version}>{version}</em> : null}<b>{ok ? 'READY' : 'MISSING'}</b></div>)}</div>{runtime.error && <div className="runtime-error" role="alert"><b>Pipeline check details</b><p>{runtime.error}</p><button className="ghost" onClick={() => void copyDiagnostics()}>Copy diagnostics</button></div>}</article>
+    <header className="settings-head"><div><span className="eyebrow">(04 / SETTINGS)</span><h1>Your workspace<span className="accent-dot">.</span><span className="accent-star">*</span></h1></div></header>
+    <div className="settings-layout">
+      <nav className="settings-nav" role="tablist" aria-label="Settings sections">{([['general', 'General'], ['appearance', 'Appearance'], ['folders', 'Folders'], ['processing', 'Processing'], ['about', 'About']] as const).map(([key, label]) => <button key={key} role="tab" aria-selected={settingsTab === key} className={settingsTab === key ? 'active' : ''} onClick={() => setSettingsTab(key as typeof settingsTab)}>{label}</button>)}</nav>
+      <div className="settings-main">
+        {settingsTab === 'appearance' && <><h2 className="settings-section-title">Appearance</h2>
+          <div className="settings-row"><span className="settings-label">Theme</span><div className="theme-toggle" role="group" aria-label="Theme"><button aria-pressed={preferences.theme === 'dark'} className={preferences.theme !== 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'dark' })}>Dark</button><button aria-pressed={preferences.theme === 'light'} className={preferences.theme === 'light' ? 'active' : ''} onClick={() => void onPreferences({ ...preferences, theme: 'light' })}>Light</button></div><span className="settings-desc">Choose the overall interface theme.</span></div>
+          <div className="settings-row"><span className="settings-label">Expert mode</span><label className="toggle-switch"><input type="checkbox" checked={preferences.expertMode} onChange={(event) => void onPreferences({ ...preferences, expertMode: event.target.checked })} /><span className="toggle-track" /></label><span className="settings-desc">Show field order, rotation, color management, and compatibility controls.</span></div>
+          <button className="ghost show-welcome" onClick={onShowWelcome}>Show welcome guide</button>
+        </>}
+        {settingsTab === 'general' && <><h2 className="settings-section-title">General</h2>
+          <div className="settings-row"><span className="settings-label">Project name</span><div className="location-row"><input value={session.name} maxLength={100} onChange={(event) => onSession({ ...session, name: event.target.value })} /></div></div>
+          <div className="settings-row"><span className="settings-label">Watched folders</span><span className="settings-desc">{session.watchFolders.length ? session.watchFolders.join(', ') : 'None configured for this project.'}</span></div>
+        </>}
+        {settingsTab === 'folders' && <><h2 className="settings-section-title">Project locations</h2>
+          <div className="settings-row"><span className="settings-label">Project library</span><span className="settings-desc">Main project data, timelines and metadata.</span><div className="location-row"><input readOnly title={preferences.libraryPath} value={preferences.libraryPath} /><button className="ghost" onClick={() => choose('libraryPath')}>Browse &rarr;</button></div></div>
+          <div className="settings-row"><span className="settings-label">Source masters</span><span className="settings-desc">Original video files (read-only).</span><div className="location-row"><input readOnly title={preferences.downloadPath} value={preferences.downloadPath} /><button className="ghost" onClick={() => choose('downloadPath')}>Browse &rarr;</button></div></div>
+          <div className="settings-row"><span className="settings-label">Finished clips + frames</span><span className="settings-desc">Exported clips, GIFs, and extracted frames.</span><div className="location-row"><input readOnly title={preferences.exportPath} value={preferences.exportPath} /><button className="ghost" onClick={() => choose('exportPath')}>Browse &rarr;</button></div></div>
+        </>}
+        {settingsTab === 'processing' && <><h2 className="settings-section-title">Processing preferences</h2>
+        </>}
+        {settingsTab === 'about' && <><h2 className="settings-section-title">About Vapormint</h2>
+          <p className="settings-about-text">Version 2.1.3 &middot; Local video processing with VapourSynth and FFmpeg.</p>
+          <button className="ghost" onClick={() => void window.cuttingFloor.checkForUpdates()}>Check for updates</button>
+          <div className="settings-runtime">{tools.map(([name, ok, version]) => <div key={name}><i className={ok ? 'ok' : 'missing'} /><span>{name}</span>{version && ok ? <em className="tool-version" title={version}>{version}</em> : null}<b>{ok ? 'READY' : 'MISSING'}</b></div>)}</div>
+          {runtime.error && <div className="runtime-error" role="alert"><b>Pipeline check details</b><p>{runtime.error}</p><button className="ghost" onClick={() => void copyDiagnostics()}>Copy diagnostics</button></div>}
+        </>}
+      </div>
+      <aside className="settings-sidebar">
+        <div className="settings-preview">{previewSource?.thumbnailUrl ? <img src={previewSource.thumbnailUrl} alt="" /> : <span style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--line-strong)' }}>No preview</span>}</div>
+        <div className="settings-local-badge">( LOCAL BY DESIGN )</div>
+        <div className="settings-pipeline"><h4>Pipeline status</h4><span>{tools.every(([, ok]) => ok) ? 'All tools ready' : 'Some tools missing'}</span><div className="settings-runtime">{tools.map(([name, ok]) => <div key={name}><span>{name}</span><b>{ok ? 'Ready' : 'Missing'}</b></div>)}</div></div>
+      </aside>
     </div>
+    <footer className="settings-footer"><div className="settings-footer-links"><span>Privacy</span><span>Terms</span><span>Licenses</span></div><span>Vapormint 2.1.3</span></footer>
   </section>;
 }
 
