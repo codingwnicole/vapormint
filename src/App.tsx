@@ -1097,7 +1097,7 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
           <div className="settings-row"><span className="settings-label">Finished clips + frames</span><span className="settings-desc">Exported clips, GIFs, and extracted frames.</span><div className="location-row"><input readOnly title={preferences.exportPath} value={preferences.exportPath} /><button className="ghost" onClick={() => choose('exportPath')}>Browse &rarr;</button></div></div>
         </>}
         {settingsTab === 'about' && <><h2 className="settings-section-title">About Vapormint</h2>
-          <p className="settings-about-text">Version 2.2.0 &middot; Local video processing with VapourSynth and FFmpeg.</p>
+          <p className="settings-about-text">Version 2.2.1 &middot; Local video processing with VapourSynth and FFmpeg.</p>
           <button className="ghost" onClick={() => void window.cuttingFloor.checkForUpdates()}>Check for updates</button>
           <div className="settings-runtime">{tools.map(([name, ok, version]) => <div key={name}><i className={ok ? 'ok' : 'missing'} /><span>{name}</span>{version && ok ? <em className="tool-version" title={version}>{version}</em> : null}<b>{ok ? 'READY' : 'MISSING'}</b></div>)}</div>
           {runtime.error && <div className="runtime-error" role="alert"><b>Pipeline check details</b><p>{runtime.error}</p><button className="ghost" onClick={() => void copyDiagnostics()}>Copy diagnostics</button></div>}
@@ -1109,7 +1109,7 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
         <div className="settings-pipeline"><h4>Pipeline status</h4><span>{tools.every(([, ok]) => ok) ? 'All tools ready' : 'Some tools missing'}</span><div className="settings-runtime">{tools.map(([name, ok]) => <div key={name}><span>{name}</span><b>{ok ? 'Ready' : 'Missing'}</b></div>)}</div></div>
       </aside>
     </div>
-    <footer className="settings-footer"><div className="settings-footer-links"><button onClick={() => onNotice('Vapormint processes everything locally. No video data leaves your machine.')}>Privacy</button><button onClick={() => onNotice('Vapormint is provided as-is for personal use. No warranty expressed or implied.')}>Terms</button><button onClick={() => onNotice('Vapormint uses FFmpeg (LGPL), VapourSynth (LGPL), yt-dlp (Unlicense), Electron (MIT), React (MIT).')}>Licenses</button></div><span>Vapormint 2.2.0</span></footer>
+    <footer className="settings-footer"><div className="settings-footer-links"><button onClick={() => onNotice('Vapormint processes everything locally. No video data leaves your machine.')}>Privacy</button><button onClick={() => onNotice('Vapormint is provided as-is for personal use. No warranty expressed or implied.')}>Terms</button><button onClick={() => onNotice('Vapormint uses FFmpeg (LGPL), VapourSynth (LGPL), yt-dlp (Unlicense), Electron (MIT), React (MIT).')}>Licenses</button></div><span>Vapormint 2.2.1</span></footer>
   </section>;
 }
 

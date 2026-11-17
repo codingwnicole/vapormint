@@ -1,7 +1,7 @@
 {
   "name": "lqs-cutting-floor",
   "productName": "Vapormint",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "author": "LQ",
   "description": "Cross-platform desktop video sifting and VapourSynth processing studio.",
   "main": ".vite/build/main.js",
