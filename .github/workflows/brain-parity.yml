@@ -27,10 +27,14 @@ jobs:
           "$RUNNER_TEMP/ffmpeg-mac/package/bin/ffprobe" -version | head -1
       - name: Record Mac brain measurements
         run: python scripts/brain-parity-check.py --ffmpeg "$RUNNER_TEMP/ffmpeg-mac/package/bin/ffmpeg" --output "$RUNNER_TEMP/mac-reference.json"
+      - name: Record Mac scalar measurements
+        run: python scripts/brain-parity-check.py --scalar --ffmpeg "$RUNNER_TEMP/ffmpeg-mac/package/bin/ffmpeg" --output "$RUNNER_TEMP/mac-scalar.json"
       - uses: actions/upload-artifact@v4
         with:
           name: mac-brain-reference
-          path: ${{ runner.temp }}/mac-reference.json
+          path: |
+            ${{ runner.temp }}/mac-reference.json
+            ${{ runner.temp }}/mac-scalar.json
   windows-brain:
     needs: mac-brain
     runs-on: windows-latest
@@ -55,5 +59,12 @@ jobs:
           $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Filter ffmpeg.exe -Recurse | Select-Object -First 1 -ExpandProperty FullName
           if (-not $ffmpeg) { throw 'Pinned FFmpeg not found' }
           & $ffmpeg -version | Select-Object -First 1
+          Write-Host 'Default Windows vs default Mac:'
           python scripts/brain-parity-check.py --ffmpeg "$ffmpeg" --expected "$env:RUNNER_TEMP/mac-brain/mac-reference.json"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $defaultResult = $LASTEXITCODE
+          Write-Host 'Default Windows vs scalar Mac:'
+          python scripts/brain-parity-check.py --ffmpeg "$ffmpeg" --expected "$env:RUNNER_TEMP/mac-brain/mac-scalar.json"
+          Write-Host 'Scalar Windows vs scalar Mac:'
+          python scripts/brain-parity-check.py --scalar --ffmpeg "$ffmpeg" --expected "$env:RUNNER_TEMP/mac-brain/mac-scalar.json"
+          $scalarResult = $LASTEXITCODE
+          if ($defaultResult -ne 0 -or $scalarResult -ne 0) { exit 1 }

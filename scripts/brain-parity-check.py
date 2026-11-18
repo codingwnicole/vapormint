@@ -29,13 +29,21 @@ def main():
     parser.add_argument('--ffmpeg', required=True)
     parser.add_argument('--expected')
     parser.add_argument('--output')
+    parser.add_argument('--scalar', action='store_true', help='Diagnostic: disable FFmpeg CPU optimizations for pixel conversion')
     args = parser.parse_args()
     results = {}
     with tempfile.TemporaryDirectory(prefix='vapormint-brain-parity-') as temp:
+        brain = ROOT / 'scripts/cf_analysis.py'
+        if args.scalar:
+            original = brain.read_text(encoding='utf8')
+            needle = 'cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-an"]'
+            if needle not in original: raise RuntimeError('Cannot instrument brain decoder')
+            brain = Path(temp) / 'scalar_brain.py'
+            brain.write_text(original.replace(needle, 'cmd = [ffmpeg, "-cpuflags", "0", "-hide_banner", "-loglevel", "error", "-an"]'), encoding='utf8')
         for kind in ('flat', 'moving', 'interlaced-pattern'):
             video = Path(temp) / f'{kind}.y4m'
             fixture(video, kind)
-            run = subprocess.run([sys.executable, str(ROOT / 'scripts/cf_analysis.py'), '--input', str(video), '--probe', json.dumps({'duration':FRAMES/FPS, 'fps':FPS}), '--ffmpeg', str(Path(args.ffmpeg).resolve())], capture_output=True, text=True, check=True)
+            run = subprocess.run([sys.executable, str(brain), '--input', str(video), '--probe', json.dumps({'duration':FRAMES/FPS, 'fps':FPS}), '--ffmpeg', str(Path(args.ffmpeg).resolve())], capture_output=True, text=True, check=True)
             result = json.loads(run.stdout)
             if not result.get('ok'): raise RuntimeError(f'{kind}: {result}')
             results[kind] = result['analysis']
