@@ -458,7 +458,8 @@ input:checked + .toggle-track::after { background: var(--on-accent); transform: 
 .settings-preview img { width: 100%; height: 100%; object-fit: cover; }
 .settings-local-badge { text-align: center; color: var(--muted); font: italic 300 14px var(--serif); letter-spacing: .04em; padding: 12px; border: 1px solid var(--line); }
 .settings-pipeline { display: grid; gap: 10px; }
-.settings-pipeline .settings-runtime { grid-template-columns: 1fr; }
+.settings-pipeline .settings-runtime { grid-template-columns: 1fr; gap: 8px; }
+.settings-pipeline .settings-runtime > div { grid-template-columns: 1fr auto; }
 .settings-pipeline h4 { margin: 0; font: 800 10px "Inter", sans-serif; letter-spacing: .14em; color: var(--accent); text-transform: uppercase; }
 .settings-about-text { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .settings-about-text p { margin: 0 0 12px; }
