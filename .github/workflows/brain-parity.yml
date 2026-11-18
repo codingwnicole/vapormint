@@ -1,0 +1,33 @@
+name: Brain parity
+on:
+  push:
+    branches: [macos-apple-silicon-port]
+  pull_request:
+    paths:
+      - scripts/cf_analysis.py
+      - scripts/brain-parity-check.py
+      - tests/fixtures/brain-parity-apple-silicon.json
+      - .github/workflows/brain-parity.yml
+  workflow_dispatch:
+jobs:
+  windows-brain:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Download the pinned Windows FFmpeg runtime
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/hxxliz/vapormint/releases/download/v2.0.0/ffmpeg-n9.0.1-29-gad500d59cb-20260913-win64-mirror.zip'
+          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP/ffmpeg.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP/ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP/ffmpeg"
+      - name: Compare Windows brain measurements with Mac
+        shell: pwsh
+        run: |
+          $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Filter ffmpeg.exe -Recurse | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $ffmpeg) { throw 'Pinned FFmpeg not found' }
+          & $ffmpeg -version | Select-Object -First 1
+          python scripts/brain-parity-check.py --ffmpeg "$ffmpeg" --expected tests/fixtures/brain-parity-apple-silicon.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

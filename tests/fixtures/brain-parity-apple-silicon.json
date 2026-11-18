@@ -1,0 +1,89 @@
+{
+  "flat": {
+    "banding": 247,
+    "bandingNote": "severe banding (collapsed luma palette)",
+    "combPixels": 0,
+    "distinctLumaLevels": 1,
+    "frameTiming": {
+      "confidence": "High",
+      "detail": "static/frozen content (dup fraction 1.00)",
+      "dupFraction": 1.0,
+      "kind": "Constant sample",
+      "period2Fit": 1.0,
+      "period5Fit": 1.0,
+      "runVariety": 0,
+      "sampledFrames": 30
+    },
+    "noise": 0.0,
+    "openingIssue": "Opening frames look static/frozen.",
+    "qualitySummary": "scan=Progressive, timing=Constant sample, banding=247, noise=0.0",
+    "scanEvidence": {
+      "classification": "Progressive",
+      "combPixelsMedian": 0,
+      "confidence": "Medium",
+      "distinctLumaLevelsMedian": 1,
+      "neighborDiffMedian": 0.0,
+      "sampledFrames": 32,
+      "sampledSeconds": 2.0
+    },
+    "scanType": "Progressive"
+  },
+  "interlaced-pattern": {
+    "banding": 0,
+    "bandingNote": null,
+    "combPixels": 12540,
+    "distinctLumaLevels": 256,
+    "frameTiming": {
+      "confidence": "High",
+      "detail": "progressive (dup fraction 0.00)",
+      "dupFraction": 0.0,
+      "kind": "Constant sample",
+      "period2Fit": 1.0,
+      "period5Fit": 1.0,
+      "runVariety": 0,
+      "sampledFrames": 30
+    },
+    "noise": 7.003,
+    "openingIssue": null,
+    "qualitySummary": "scan=Interlaced, timing=Constant sample, banding=0, noise=7.0",
+    "scanEvidence": {
+      "classification": "Interlaced",
+      "combPixelsMedian": 12540,
+      "confidence": "High",
+      "distinctLumaLevelsMedian": 256,
+      "neighborDiffMedian": 7.003,
+      "sampledFrames": 32,
+      "sampledSeconds": 2.0
+    },
+    "scanType": "Interlaced"
+  },
+  "moving": {
+    "banding": 0,
+    "bandingNote": null,
+    "combPixels": 2345,
+    "distinctLumaLevels": 256,
+    "frameTiming": {
+      "confidence": "High",
+      "detail": "progressive (dup fraction 0.00)",
+      "dupFraction": 0.0,
+      "kind": "Constant sample",
+      "period2Fit": 1.0,
+      "period5Fit": 1.0,
+      "runVariety": 0,
+      "sampledFrames": 30
+    },
+    "noise": 2.321,
+    "openingIssue": null,
+    "qualitySummary": "scan=Interlaced, timing=Constant sample, banding=0, noise=2.3",
+    "scanEvidence": {
+      "classification": "Interlaced",
+      "combPixelsMedian": 2345,
+      "confidence": "High",
+      "distinctLumaLevelsMedian": 256,
+      "neighborDiffMedian": 2.321,
+      "sampledFrames": 32,
+      "sampledSeconds": 2.0
+    },
+    "scanType": "Interlaced"
+  }
+}
