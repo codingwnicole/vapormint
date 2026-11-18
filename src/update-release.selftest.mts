@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
-import { findCompatibleRelease } from './update-release.ts';
-const releases=[{tag_name:'v3.0.0',html_url:'https://github.com/hxxliz/vapormint/releases/tag/v3.0.0',assets:[{name:'VapormintSetup.exe'}]},{tag_name:'v2.9.0',html_url:'https://github.com/hxxliz/vapormint/releases/tag/v2.9.0',assets:[{name:'Vapormint-2.9.0-darwin-arm64.zip'}]}];
+import { findCompatibleRelease, findDmgAsset } from './update-release.ts';
+const releases=[{tag_name:'v3.0.0',html_url:'https://github.com/hxxliz/vapormint/releases/tag/v3.0.0',assets:[{name:'VapormintSetup.exe'}]},{tag_name:'v2.9.0',html_url:'https://github.com/hxxliz/vapormint/releases/tag/v2.9.0',assets:[{name:'Vapormint-2.9.0-darwin-arm64.zip'},{name:'Vapormint-darwin-arm64.dmg',browser_download_url:'https://github.com/hxxliz/vapormint/releases/download/v2.9.0/Vapormint-darwin-arm64.dmg'}]}];
 assert.equal(findCompatibleRelease(releases,'darwin','arm64')?.tag_name,'v2.9.0');
 assert.equal(findCompatibleRelease(releases,'win32','x64')?.tag_name,'v3.0.0');
 assert.equal(findCompatibleRelease(releases,'darwin','x64'),undefined);
+const macRelease = findCompatibleRelease(releases,'darwin','arm64')!;
+assert.equal(findDmgAsset(macRelease,'arm64')?.name,'Vapormint-darwin-arm64.dmg');
+assert.equal(findDmgAsset(macRelease,'x64'),undefined);
+assert.equal(findDmgAsset(releases[0],'arm64'),undefined);
 console.log('Update selection matches platform and architecture');

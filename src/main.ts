@@ -8,7 +8,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { importMacProjects } from './mac-migration';
-import { findCompatibleRelease, type Release } from './update-release';
+import { findCompatibleRelease, findDmgAsset, type Release } from './update-release';
 import { tmpdir } from 'node:os';
 import { capture, executable, checkMacToolUpdates, updateMacTool, downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
 import { buildReceipt, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type ReelClip, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
@@ -604,7 +604,7 @@ else void app.whenReady().then(async () => {
   const RELEASE_PAGE = `https://github.com/${GITHUB_REPO}/releases`;
   const semver = (v: string) => v.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0);
   const isNewer = (a: string, b: string) => { const x = semver(a), y = semver(b); for (let i = 0; i < 3; i++) { if ((x[i] ?? 0) > (y[i] ?? 0)) return true; if ((x[i] ?? 0) < (y[i] ?? 0)) return false; } return false; };
-  let latestRelease: { tag: string; url: string } | null = null;
+  let latestRelease: { tag: string; url: string; release?: Release } | null = null;
   const sendUpdate = (info: UpdateInfo) => mainWindow?.webContents.send('update:progress', info);
 
   ipcMain.handle('update:check', async () => {
@@ -617,7 +617,7 @@ else void app.whenReady().then(async () => {
       const releases = (await res.json()) as Release[];
       const stable = findCompatibleRelease(releases, process.platform, process.arch);
       if (!stable) return reply({ status: 'current', version: current, message: 'No compatible release is published for this platform yet.', percent: 0 });
-      latestRelease = { tag: stable.tag_name, url: stable.html_url };
+      latestRelease = { tag: stable.tag_name, url: stable.html_url, release: stable };
       if (isNewer(stable.tag_name, current)) return reply({ status: 'available', version: stable.tag_name, message: `Version ${stable.tag_name} is available — click "Install update" to download it`, percent: 0 });
       return reply({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
     } catch (e) {
@@ -626,10 +626,48 @@ else void app.whenReady().then(async () => {
     }
   });
   ipcMain.handle('update:apply', async () => {
-    // Open the release page so the user can grab the installer. Squirrel apps that
-    // don't run a feed server route the "install" through the release page.
-    const url = latestRelease?.url ?? RELEASE_PAGE;
-    await shell.openExternal(url);
+    if (process.platform !== 'darwin' || !latestRelease?.release) {
+      await shell.openExternal(latestRelease?.url ?? RELEASE_PAGE);
+      return;
+    }
+    const dmg = findDmgAsset(latestRelease.release, process.arch);
+    if (!dmg?.browser_download_url) { await shell.openExternal(latestRelease.url); return; }
+    const reply = (info: UpdateInfo) => { sendUpdate(info); return info; };
+    try {
+      reply({ status: 'downloading', version: latestRelease.tag, message: 'Downloading update…', percent: 5 });
+      const dmgPath = path.join(tmpdir(), dmg.name);
+      const res = await fetch(dmg.browser_download_url);
+      if (!res.ok || !res.body) throw new Error(`Download failed: ${res.status}`);
+      const total = Number(res.headers.get('content-length') || 0);
+      let downloaded = 0;
+      const fileStream = createWriteStream(dmgPath);
+      for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+        fileStream.write(chunk);
+        downloaded += chunk.length;
+        if (total) reply({ status: 'downloading', version: latestRelease.tag, message: 'Downloading update…', percent: Math.round((downloaded / total) * 80) + 5 });
+      }
+      await new Promise<void>((resolve, reject) => fileStream.end(() => resolve()));
+      reply({ status: 'downloading', version: latestRelease.tag, message: 'Installing…', percent: 90 });
+      const { stdout } = await capture('hdiutil', ['attach', dmgPath, '-nobrowse', '-readonly', '-mountrandom', tmpdir()]);
+      const mountLine = stdout.split('\n').find(l => l.includes('/Volumes/')) ?? '';
+      const mountPoint = mountLine.replace(/.*?(\/Volumes\/.*)/, '$1').trim();
+      if (!mountPoint) throw new Error('Could not mount DMG');
+      try {
+        const apps = (await readdir(mountPoint)).filter(f => f.endsWith('.app'));
+        if (!apps.length) throw new Error('No .app found in DMG');
+        const src = path.join(mountPoint, apps[0]);
+        const dest = path.join('/Applications', apps[0]);
+        await rm(dest, { recursive: true, force: true });
+        await cp(src, dest, { recursive: true });
+      } finally { await capture('hdiutil', ['detach', mountPoint, '-force']).catch(() => {}); }
+      await rm(dmgPath, { force: true }).catch(() => {});
+      reply({ status: 'current', version: latestRelease.tag, message: 'Update installed — restart to use the new version', percent: 100 });
+      const { response } = await dialog.showMessageBox(mainWindow!, { type: 'info', buttons: ['Restart now', 'Later'], defaultId: 0, message: `Vapormint ${latestRelease.tag} installed`, detail: 'Restart to use the new version.' });
+      if (response === 0) { app.relaunch(); app.quit(); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      reply({ status: 'error', version: latestRelease?.tag ?? '', message: `Update failed: ${msg}`, percent: 0 });
+    }
   });
 
   // ---- Tool updates ----
