@@ -10,13 +10,39 @@ on:
       - .github/workflows/brain-parity.yml
   workflow_dispatch:
 jobs:
+  mac-brain:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.10'
+      - name: Download pinned Mac FFmpeg and FFprobe
+        run: |
+          cd "$RUNNER_TEMP"
+          npm pack --ignore-scripts @dfloresc/ffmpeg-macos-gpl-arm64@9.0.1-1
+          mkdir ffmpeg-mac
+          tar -xzf dfloresc-ffmpeg-macos-gpl-arm64-9.0.1-1.tgz -C ffmpeg-mac
+          "$RUNNER_TEMP/ffmpeg-mac/package/bin/ffmpeg" -version | head -1
+          "$RUNNER_TEMP/ffmpeg-mac/package/bin/ffprobe" -version | head -1
+      - name: Record Mac brain measurements
+        run: python scripts/brain-parity-check.py --ffmpeg "$RUNNER_TEMP/ffmpeg-mac/package/bin/ffmpeg" --output "$RUNNER_TEMP/mac-reference.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac-brain-reference
+          path: ${{ runner.temp }}/mac-reference.json
   windows-brain:
+    needs: mac-brain
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12.10'
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-brain-reference
+          path: ${{ runner.temp }}/mac-brain
       - name: Download the pinned Windows FFmpeg runtime
         shell: pwsh
         run: |
@@ -29,5 +55,5 @@ jobs:
           $ffmpeg = Get-ChildItem "$env:RUNNER_TEMP/ffmpeg" -Filter ffmpeg.exe -Recurse | Select-Object -First 1 -ExpandProperty FullName
           if (-not $ffmpeg) { throw 'Pinned FFmpeg not found' }
           & $ffmpeg -version | Select-Object -First 1
-          python scripts/brain-parity-check.py --ffmpeg "$ffmpeg" --expected tests/fixtures/brain-parity-apple-silicon.json
+          python scripts/brain-parity-check.py --ffmpeg "$ffmpeg" --expected "$env:RUNNER_TEMP/mac-brain/mac-reference.json"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
