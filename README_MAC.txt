@@ -1,4 +1,4 @@
-Vapormint 2.2.2 — Apple Silicon test build
+Vapormint 2.2.3 — Apple Silicon test build
 
 This build supports Apple Silicon Macs running macOS 15 or later.
 Extract the ZIP and move Vapormint.app to Applications. It is an unsigned,
