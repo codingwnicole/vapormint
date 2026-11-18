@@ -659,6 +659,7 @@ else void app.whenReady().then(async () => {
         const dest = path.join('/Applications', apps[0]);
         await rm(dest, { recursive: true, force: true });
         await cp(src, dest, { recursive: true });
+        await capture('xattr', ['-cr', dest]).catch(() => {});
       } finally { await capture('hdiutil', ['detach', mountPoint, '-force']).catch(() => {}); }
       await rm(dmgPath, { force: true }).catch(() => {});
       reply({ status: 'current', version: latestRelease.tag, message: 'Update installed — restart to use the new version', percent: 100 });

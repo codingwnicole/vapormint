@@ -45,8 +45,13 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
 ### macOS (Apple Silicon)
 
 1. Download **`Vapormint-darwin-arm64.dmg`** from the [latest release](#releases).
-2. Open the DMG and drag Vapormint to Applications. On first launch, right-click → Open to bypass Gatekeeper.
-3. FFmpeg, FFprobe, yt-dlp, and VapourSynth must be installed via Homebrew — the Mac build does not bundle them (yet).
+2. Open the DMG and drag Vapormint to Applications.
+3. **Before launching**, open Terminal and run:
+   ```bash
+   sudo xattr -cr /Applications/Vapormint.app
+   ```
+   This removes the quarantine flag macOS adds to downloaded apps. Without it, Gatekeeper will say the app is "damaged" because the build is unsigned. You only need to do this once.
+4. FFmpeg, FFprobe, yt-dlp, and VapourSynth must be installed via Homebrew — the Mac build does not bundle them (yet).
 
 **System requirements:** macOS 15+, Apple Silicon (M1 or later). Intel Macs are not supported.
 
