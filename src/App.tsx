@@ -39,6 +39,7 @@ import {
   type StudioLook,
   type StudioPreferences,
   type TaskProgress,
+  type ToolVersionInfo,
   type UpdateInfo,
   type ViewName,
 } from './shared';
@@ -1081,6 +1082,24 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
     ['VapourSynth plugins', runtime.vapourSynthPlugins, runtime.versions?.vapourSynth ? `core ${runtime.versions.vapourSynth}` : undefined],
   ];
   const [settingsTab, setSettingsTab] = useState<'general' | 'appearance' | 'folders' | 'about'>('general');
+  const [toolUpdates, setToolUpdates] = useState<ToolVersionInfo[] | null>(null);
+  const [toolChecking, setToolChecking] = useState(false);
+  const [toolUpdating, setToolUpdating] = useState<string | null>(null);
+  const checkTools = async () => {
+    setToolChecking(true);
+    try { setToolUpdates(await window.cuttingFloor.checkToolUpdates()); }
+    catch (error) { onError(error); }
+    finally { setToolChecking(false); }
+  };
+  const updateTool = async (name: string) => {
+    setToolUpdating(name);
+    try {
+      const result = await window.cuttingFloor.updateTool(name);
+      onNotice(result.message);
+      if (result.ok) await checkTools();
+    } catch (error) { onError(error); }
+    finally { setToolUpdating(null); }
+  };
   const previewSource = session.sources.find((s) => s.thumbnailUrl);
   return <section className="page settings-page">
     <header className="settings-head"><div><span className="eyebrow">(04 / SETTINGS)</span><h1>Your workspace<span className="accent-dot">.</span><span className="accent-star">*</span></h1></div></header>
@@ -1105,7 +1124,9 @@ function Settings({ session, preferences, runtime, saveState, onSession, onWorks
         {settingsTab === 'about' && <><h2 className="settings-section-title">About Vapormint</h2>
           <p className="settings-about-text">Version 2.2.1 &middot; Local video processing with VapourSynth and FFmpeg.</p>
           <button className="ghost" onClick={() => void window.cuttingFloor.checkForUpdates()}>Check for updates</button>
-          <div className="settings-runtime">{tools.map(([name, ok, version]) => <div key={name}><i className={ok ? 'ok' : 'missing'} /><span>{name}</span>{version && ok ? <em className="tool-version" title={version}>{version}</em> : null}<b>{ok ? 'READY' : 'MISSING'}</b></div>)}</div>
+          <div className="settings-runtime">{tools.map(([name, ok, version]) => <div key={name}><i className={ok ? 'ok' : 'missing'} /><span>{name}</span>{version && ok ? <em className="tool-version" title={version}>{version}</em> : null}<b>{ok ? 'READY' : 'MISSING'}</b>{toolUpdates?.find((t) => t.name === name.toLowerCase() || t.name === 'ffmpeg' && (name === 'FFmpeg' || name === 'FFprobe'))?.updateAvailable && <button className="ghost tool-update-btn" disabled={!!toolUpdating} onClick={() => void updateTool(toolUpdates!.find((t) => t.name === name.toLowerCase() || t.name === 'ffmpeg' && (name === 'FFmpeg' || name === 'FFprobe'))!.name)}>{toolUpdating ? 'Updating…' : 'Update'}</button>}</div>)}</div>
+          <button className="ghost" disabled={toolChecking} onClick={() => void checkTools()}>{toolChecking ? 'Checking…' : 'Check for tool updates'}</button>
+          {toolUpdates && !toolUpdates.some((t) => t.updateAvailable) && <small style={{ color: 'var(--muted)', marginLeft: 8 }}>All tools up to date.</small>}
           {runtime.error && <div className="runtime-error" role="alert"><b>Pipeline check details</b><p>{runtime.error}</p><button className="ghost" onClick={() => void copyDiagnostics()}>Copy diagnostics</button></div>}
         </>}
       </div>

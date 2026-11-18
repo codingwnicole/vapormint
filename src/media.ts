@@ -39,7 +39,7 @@ export function stopMediaProcesses() {
 
 const executableName = (name: string) => process.platform === 'win32' ? `${name}.exe` : name;
 
-async function executable(name: string) {
+export async function executable(name: string) {
   const file = executableName(name);
   const roots = [
     path.join(process.resourcesPath, 'runtime', `${process.platform}-${process.arch}`),
@@ -67,7 +67,7 @@ function environmentFor(command: string) {
   return { ...process.env, PATH: [folder, root, process.env.PATH ?? ''].join(path.delimiter), PYTHONHOME: root, PYTHONPATH: path.join(root, 'Lib', 'site-packages') };
 }
 
-function capture(command: string, args: string[], signal?: AbortSignal) {
+export function capture(command: string, args: string[], signal?: AbortSignal) {
   return new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawnTool(command, args, signal);
     let stdout = '';
