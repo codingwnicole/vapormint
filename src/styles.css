@@ -38,6 +38,7 @@ button, input, select { line-height: 1.25; }
 
 /* ===== App shell: horizontal nav, no sidebar ===== */
 .app-shell { height: 100%; display: grid; grid-template: 52px auto 1fr 28px / 1fr; background: var(--surface); }
+.platform-darwin .titlebar { padding: 0 20px 0 80px; }
 .titlebar { grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 0; border-bottom: 1px solid var(--line); -webkit-app-region: drag; padding: 0 140px 0 20px; }
 .wordmark { display: flex; align-items: baseline; gap: 0; font: italic 300 20px var(--serif); letter-spacing: .01em; color: var(--ink); -webkit-app-region: no-drag; cursor: default; }
 .wordmark img { display: none; }

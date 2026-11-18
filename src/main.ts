@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
 import squirrelStartup from 'electron-squirrel-startup';
 import { watch, type FSWatcher, createWriteStream, createReadStream } from 'node:fs';
 import { access, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -6,14 +6,16 @@ import { Readable } from 'node:stream';
 import { constants, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
+import { importMacProjects } from './mac-migration';
+import { findCompatibleRelease, type Release } from './update-release';
 import { tmpdir } from 'node:os';
-import { capture, downloadPublicVideo, executable, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
+import { capture, executable, checkMacToolUpdates, updateMacTool, downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
 import { buildReceipt, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type ReelClip, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'local-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 
-if (squirrelStartup) app.quit();
+if (process.platform === 'win32' && squirrelStartup) app.quit();
 
 // Redirect console.log/error/warn to a log file so diagnostics survive
 const diagLogPath = path.join(app.getPath('userData'), 'diagnostics.log');
@@ -107,6 +109,17 @@ async function loadPreferences() {
         return { ...defaultPreferences(), ...old } as StudioPreferences;
       } catch { /* Try next legacy path. */ }
     }
+    if (process.platform === 'darwin') {
+      const plist = path.join(app.getPath('home'), 'Library', 'Preferences', 'local.lq.cuttingfloor.plist');
+      const readSetting = (key: string) => {
+        try { return execFileSync('/usr/libexec/PlistBuddy', ['-c', `Print :${key}`, plist], {encoding:'utf8', stdio:['ignore','pipe','ignore']}).trim(); }
+        catch { return ''; }
+      };
+      const oldDownloads = readSetting('ClipSiftDownloadsPath');
+      const oldExports = readSetting('ClipSiftExportsPath');
+      const appearance = readSetting('lqCuttingFloor.appearance');
+      return { ...defaultPreferences(), ...(path.isAbsolute(oldDownloads) ? { downloadPath:oldDownloads } : {}), ...(path.isAbsolute(oldExports) ? { exportPath:oldExports } : {}), ...(/^(dark|light)$/i.test(appearance) ? { theme:appearance.toLowerCase() as StudioPreferences['theme'] } : {}) };
+    }
     return defaultPreferences();
   }
 }
@@ -165,8 +178,8 @@ async function refreshSourceUrls(source: StudioSource) {
   if (playbackPath) try { await access(playbackPath); } catch { playbackPath = undefined; }
   let thumbnailUrl: string | undefined;
   if (source.thumbnailPath) try { await access(source.thumbnailPath); thumbnailUrl = pathToFileURL(source.thumbnailPath).href; } catch { /* No cached thumbnail. */ }
-  const fileUrl = pathToFileURL(playbackPath ?? source.sourcePath).href.replace('file:', 'local-media:');
-  return { ...source, playbackPath, fileUrl, thumbnailUrl: thumbnailUrl?.replace('file:', 'local-media:'), missing };
+  const fileUrl = pathToFileURL(playbackPath ?? source.sourcePath).href.replace('file://', 'local-media://local');
+  return { ...source, playbackPath, fileUrl, thumbnailUrl: thumbnailUrl?.replace('file://', 'local-media://local'), missing };
 }
 
 async function loadProject(id: string, preferences: StudioPreferences) {
@@ -204,6 +217,17 @@ async function loadWorkspace() {
   let firstRun = false;
   try { await access(preferencesPath()); } catch { firstRun = true; }
   let preferences = await persistPreferences(await loadPreferences(), firstRun);
+  if (process.platform === 'darwin') {
+    const home = app.getPath('home');
+    const roots = [path.join(home, 'Movies', "LQ's Cutting Floor Library"), path.join(home, 'Movies', 'ClipSift Studio Library'), path.join(home, 'Movies', 'ClipSift Library')];
+    try {
+      const plist = path.join(home, 'Library', 'Preferences', 'local.lq.cuttingfloor.plist');
+      const custom = execFileSync('/usr/libexec/PlistBuddy', ['-c', 'Print :ClipSiftLibraryPath', plist], { encoding:'utf8', stdio:['ignore','pipe','ignore'] }).trim();
+      if (path.isAbsolute(custom)) roots.push(custom);
+    } catch { /* The old app may not have selected a custom library. */ }
+    const migration = await importMacProjects(roots, preferences.libraryPath);
+    if (migration.errors.length) console.warn('Some Cutting Floor projects could not be imported:', migration.errors);
+  }
   let cards = await projectCards(preferences);
   let session: StudioSession = emptySession();
   const selected = cards.find((card) => card.id === preferences.activeProjectId) ?? cards[0];
@@ -293,8 +317,8 @@ async function loadReelClips(): Promise<ReelClip[]> {
         if (!source) continue;
         const filePath = source.playbackPath ?? source.sourcePath;
         try { await access(filePath); } catch { continue; }
-        const url = pathToFileURL(filePath).href.replace('file:', 'local-media:');
-        const poster = source.thumbnailPath ? pathToFileURL(source.thumbnailPath).href.replace('file:', 'local-media:') : undefined;
+        const url = pathToFileURL(filePath).href.replace('file://', 'local-media://local');
+        const poster = source.thumbnailPath ? pathToFileURL(source.thumbnailPath).href.replace('file://', 'local-media://local') : undefined;
         clips.push({ url, poster, start: clip.start, end: clip.end });
       }
       if (!session.clips.length) {
@@ -303,8 +327,8 @@ async function loadReelClips(): Promise<ReelClip[]> {
           try { await access(filePath); } catch { continue; }
           const dur = source.sourceAnalysis?.duration ?? 0;
           if (dur <= 0) continue;
-          const url = pathToFileURL(filePath).href.replace('file:', 'local-media:');
-          const poster = source.thumbnailPath ? pathToFileURL(source.thumbnailPath).href.replace('file:', 'local-media:') : undefined;
+          const url = pathToFileURL(filePath).href.replace('file://', 'local-media://local');
+          const poster = source.thumbnailPath ? pathToFileURL(source.thumbnailPath).href.replace('file://', 'local-media://local') : undefined;
           const count = Math.min(4, Math.max(1, Math.floor(dur / 10)));
           for (let i = 0; i < count; i++) { const start = Math.random() * Math.max(0, dur - 5); clips.push({ url, poster, start, end: Math.min(start + 5, dur) }); }
         }
@@ -495,12 +519,12 @@ function applyWindowTheme(theme: StudioPreferences['theme']) {
   if (!mainWindow) return;
   const colors = windowTheme(theme);
   mainWindow.setBackgroundColor(colors.background);
-  mainWindow.setTitleBarOverlay(colors.overlay);
+  if (process.platform !== 'darwin') mainWindow.setTitleBarOverlay(colors.overlay);
 }
 
 function createWindow(theme: StudioPreferences['theme'] = 'dark') {
   const colors = windowTheme(theme);
-  mainWindow = new BrowserWindow({ width: 1500, height: 940, minWidth: 960, minHeight: 620, backgroundColor: colors.background, icon: path.join(__dirname, '../assets/icon.ico'), titleBarStyle: 'hidden', titleBarOverlay: colors.overlay, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  mainWindow = new BrowserWindow({ width: 1500, height: 940, minWidth: 960, minHeight: 620, backgroundColor: colors.background, icon: path.join(__dirname, '../assets/icon.ico'), titleBarStyle: 'hidden', ...(process.platform === 'darwin' ? {} : { titleBarOverlay: colors.overlay }), webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.webContents.on('render-process-gone', (_event, details) => { if (details.reason !== 'clean-exit') showFatalError('Vapormint renderer stopped', details.reason); });
   const loading = MAIN_WINDOW_VITE_DEV_SERVER_URL
@@ -515,6 +539,9 @@ process.on('unhandledRejection', (error) => showFatalError('Vapormint could not 
 const hasInstanceLock = app.requestSingleInstanceLock();
 if (!hasInstanceLock) app.quit();
 else void app.whenReady().then(async () => {
+  if (process.platform === 'darwin') Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
+  ]));
   ipcMain.handle('workspace:load', loadWorkspace);
   ipcMain.handle('reel:clips', loadReelClips);
   ipcMain.handle('project:create', (_event, name: string) => createProject(name));
@@ -587,9 +614,9 @@ else void app.whenReady().then(async () => {
       sendUpdate({ status: 'downloading', version: current, message: 'Checking for updates…', percent: 0 });
       const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } });
       if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
-      const releases = (await res.json()) as Array<{ tag_name: string; html_url: string; draft?: boolean; prerelease?: boolean }>;
-      const stable = releases.find((r) => !r.draft);
-      if (!stable) return reply({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
+      const releases = (await res.json()) as Release[];
+      const stable = findCompatibleRelease(releases, process.platform, process.arch);
+      if (!stable) return reply({ status: 'current', version: current, message: 'No compatible release is published for this platform yet.', percent: 0 });
       latestRelease = { tag: stable.tag_name, url: stable.html_url };
       if (isNewer(stable.tag_name, current)) return reply({ status: 'available', version: stable.tag_name, message: `Version ${stable.tag_name} is available — click "Install update" to download it`, percent: 0 });
       return reply({ status: 'current', version: current, message: `You are on the latest version (${current})`, percent: 0 });
@@ -616,6 +643,7 @@ else void app.whenReady().then(async () => {
   };
 
   ipcMain.handle('tools:check', async (): Promise<ToolVersionInfo[]> => {
+    if (process.platform === 'darwin') return checkMacToolUpdates();
     const runtime = await getRuntimeStatus();
     const checks: Array<{ name: string; key: keyof NonNullable<typeof runtime.versions>; repo: string }> = [
       { name: 'yt-dlp', key: 'ytDlp', repo: 'yt-dlp/yt-dlp' },
@@ -635,6 +663,7 @@ else void app.whenReady().then(async () => {
   });
 
   ipcMain.handle('tools:update', async (_event, name: string): Promise<{ ok: boolean; message: string; version?: string }> => {
+    if (process.platform === 'darwin') { try { return await updateMacTool(name); } catch (error) { return {ok:false, message:errorMessage(error)}; } }
     // Only yt-dlp supports in-place self-update via its own --update flag.
     // ffmpeg requires downloading a build archive — not safe to swap while running.
     if (name !== 'yt-dlp') return { ok: false, message: `${name} cannot be updated in-place. Download a new build from the release page.` };
@@ -667,13 +696,14 @@ else void app.whenReady().then(async () => {
   });
 
   protocol.handle('local-media', async (req) => {
-    const filePath = decodeURIComponent(new URL(req.url.replace('local-media:', 'file:')).pathname).replace(/^\/([A-Z]:)/, '$1');
-    if (!filePath.match(/\.(mp4|mkv|mov|avi|webm|ts|m2ts|mts|mpg|mpeg|wmv|flv|gif|png|jpg|jpeg|webp|bmp|tiff?)$/i)) return new Response('Forbidden', { status: 403 });
+    const filePath = decodeURIComponent(new URL(req.url).pathname).replace(/^\/([A-Z]:)/, '$1');
+    if (!filePath.match(/\.(mp4|m4v|mkv|mov|avi|webm|ts|m2ts|mts|mpg|mpeg|wmv|flv|gif|png|jpg|jpeg|webp|bmp|tiff?)$/i)) return new Response('Forbidden', { status: 403 });
     const total = (await stat(filePath)).size;
     const range = req.headers.get('range')?.match(/bytes=(\d+)-(\d*)/);
     const start = range ? Number(range[1]) : 0;
     const end = range?.[2] ? Number(range[2]) : total - 1;
-    const headers: Record<string, string> = { 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1) };
+    const mimeTypes: Record<string, string> = { '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.webm': 'video/webm', '.gif': 'image/gif', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+    const headers: Record<string, string> = { 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1), 'Content-Type': mimeTypes[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream' };
     if (range) headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
     return new Response(Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream, { status: range ? 206 : 200, headers });
   });

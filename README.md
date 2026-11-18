@@ -40,26 +40,26 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
 2. If Windows SmartScreen warns ("Windows protected your PC"), click **More info** → **Run anyway**. The build is unsigned — that's why.
 3. That's it. Python 3.12, FFmpeg, FFprobe, and the VapourSynth core + plugins are all bundled.
 
-<details>
-<summary><b>macOS — porting notes (in progress)</b></summary>
+**System requirements:** Windows 10 / 11, x64, ~2 GB free disk. A GPU is **not** required; rendering is CPU-based.
 
-Vapormint is cross-platform by design (Electron + a bundled Python/VapourSynth runtime), but the macOS build lags the Windows build. See [`MAC_PORT_INSTRUCTIONS.md`](MAC_PORT_INSTRUCTIONS.md) for the ordered edit list to bring the 2.0 feature set (fonts, CSP, auto-updater, self-tune, source guidance, feedback, diagnostics) onto the Mac build.
-</details>
+### macOS (Apple Silicon)
 
-### System requirements (Windows)
+1. Download **`Vapormint-darwin-arm64.dmg`** from the [latest release](#releases).
+2. Open the DMG and drag Vapormint to Applications. On first launch, right-click → Open to bypass Gatekeeper.
+3. FFmpeg, FFprobe, yt-dlp, and VapourSynth must be installed via Homebrew — the Mac build does not bundle them (yet).
 
-- Windows 10 / 11, x64
-- ~2 GB free disk (the app + bundled runtime)
-- A GPU is **not** required; rendering is CPU-based
+**System requirements:** macOS 15+, Apple Silicon (M1 or later). Intel Macs are not supported.
+
+**Coming from LQ's Cutting Floor (native Swift app)?** Vapormint auto-imports your projects on first launch — originals stay in place, recipes and completed status carry over.
 
 ---
 
 ## Features
 
-### 🎛 Self-Tune (auto-preview)
+### Self-Tune (auto-preview)
 Open a clip and Vapormint renders a 1-second preview from the current recipe, measures the pixels, and writes evidence-based fixes back into the recipe — automatically. Expand **"Why these settings?"** to see exactly what the analysis found: interlacing evidence, noise level, banding detection, sharpening rationale. **Re-tune** re-runs the analysis whenever you change something by hand.
 
-### 📋 Source Guidance
+### Source Guidance
 Plain-language verdicts you can actually act on:
 - *"Interlacing confirmed — deinterlacing is enabled."*
 - *"Progressive (normal) footage — no deinterlacing needed."*
@@ -67,26 +67,29 @@ Plain-language verdicts you can actually act on:
 
 Plus a **"What to look for"** checklist and a **Video stats** panel with every measured value.
 
-### 🎬 Cinematic Darkroom UI
-- **Space Grotesk** (300–600) for all text, **Space Mono** for technical labels & timestamps.
-- Near-black canvas (`#080808`) with a single warm **celluloid cream** accent (`#ece4b4`).
+### A24 / Freshman design system
+- **Cormorant Garamond** (serif headings), **Inter** (body), **IBM Plex Mono** (timestamps & technical).
 - Zero border-radius, zero box-shadows, zero gradients. Depth from value contrast and 1px hairlines.
-- A full **light theme**: warm paper (`#f5f2ec`) with a deep gold accent.
-- Every color is a CSS custom property — nothing hardcoded.
+- Three palette themes (Notflix, Wholou, Disnee Plus), each with dark + light variants.
+- 15 CSS color tokens, 2 font family tokens — nothing hardcoded.
 
-### 🔄 Batch export queue
+### Batch export queue
 Mark multiple clips and render them all in one pass, sequentially, with per-clip progress and a live progress bar in the queue panel. Cancellable mid-batch.
 
-### 📄 Render receipts
+### Thumbnailed clip list
+Browse clips with thumbnail previews and filter by status (queued, reviewed, all) in the Process tab.
+
+### Render receipts
 Every export writes an **auditable receipt** — the exact recipe, source measurements, engine, output paths, and the generated `.vpy` script — so you can reproduce any master, forever.
 
-### 🚧 Honest pixel callouts
+### Honest pixel callouts
 When the container says one thing and the pixels say another (e.g. "tagged progressive but combing detected"), Vapormint tells you in plain language instead of silently picking a side.
 
-### 🔁 Auto-updater, feedback & diagnostics
-- **Check for updates** from Settings.
+### Tool updates & auto-updater
+- **Check for updates** from Settings — platform-aware, finds the right installer for your OS.
+- **yt-dlp** can be updated in-place from Settings (the only tool that self-updates).
 - **Report a bug / suggest a feature** from Settings (saved locally as JSON).
-- Every console line and every export/preview-tune failure logged to `diagnostics.log` in the app data folder.
+- Every console line and export/preview-tune failure logged to `diagnostics.log`.
 
 ---
 
@@ -131,7 +134,7 @@ Crop → Deinterlace → Debilinear → Denoise → Sharpen → Crop
 
 ## Build from source
 
-Requires Node.js (the build tested on Node 24) and npm.
+Requires Node.js (tested on Node 24) and npm.
 
 ```bash
 git clone https://github.com/hxxliz/vapormint.git
@@ -139,10 +142,13 @@ cd vapormint
 npm install
 npm run check        # domain + sidebar self-tests
 npm run typecheck    # tsc --noEmit
-npm run make         # produce VapormintSetup.exe (Windows) + packaged app
+npm run check:mac    # Mac migration, update-release, and tool-update checks
+npm run make         # produce installer for the current platform
 ```
 
-The finished installer lands in `out/make/squirrel.windows/x64/VapormintSetup.exe`.
+**Windows:** The finished installer lands in `out/make/squirrel.windows/x64/VapormintSetup.exe`.
+
+**macOS:** The DMG and ZIP land in `out/make/`. See [`README_MAC.txt`](README_MAC.txt) for Mac-specific build prerequisites and runtime assembly.
 
 > **Line endings:** the repo enforces LF via `.gitattributes` (`* text=auto eol=lf`). The self-tests assert on multi-line source strings, so keep the sources LF — a CRLF checkout will break them.
 
@@ -150,29 +156,30 @@ The finished installer lands in `out/make/squirrel.windows/x64/VapormintSetup.ex
 
 ## Releases
 
-Releases live on [GitHub](https://github.com/hxxliz/vapormint/releases). Each release attaches:
+Releases live on [GitHub](https://github.com/hxxliz/vapormint/releases). Each release attaches platform-specific assets:
 
-| Asset | What it is |
-|-------|-----------|
-| `VapormintSetup.exe` | Windows installer (Squirrel). Run it, that's the whole install. |
-| `Vapormint-<version>-full.nupkg` | The full Squirrel package (what the in-app updater consumes). |
+| Asset | Platform | What it is |
+|-------|----------|-----------|
+| `VapormintSetup.exe` | Windows | Squirrel installer. Run it, that's the whole install. |
+| `Vapormint-<version>-full.nupkg` | Windows | Full Squirrel package (what the in-app updater consumes). |
+| `Vapormint-darwin-arm64.dmg` | macOS | Disk image for Apple Silicon Macs. |
+| `Vapormint-darwin-arm64-<version>.zip` | macOS | ZIP archive alternative. |
 
-The in-app **Check for updates** reads the Squirrel `RELEASES` metadata from the release you installed from, so updating is "download the next `VapormintSetup.exe` and run it" — your settings, projects, and completed exports are preserved across updates.
-
-### Current version
-
-**2.1.0** — export pipeline fixes, import-time pre-indexing, IPC security hardening, UI entrance animations, and in-app version info. See [release notes](https://github.com/hxxliz/vapormint/releases/tag/v2.1.0).
+The app's **Check for updates** detects your platform and finds the right asset automatically via `findCompatibleRelease()`.
 
 ---
 
 ## What's in the box
 
-The installer bundles the whole toolchain, so you never touch a terminal:
+The Windows installer bundles the whole toolchain, so you never touch a terminal:
 
 - **Python 3.12** (Windows x64, embedded layout)
 - **FFmpeg + FFprobe** (decode, frame sampling, export)
-- **VapourSynth** core + the plugins the recipes use (QTGMC, KNLMeansCL, Finesharp, VCFreq, deband, descale, …)
+- **yt-dlp** (source downloads)
+- **VapourSynth** core + the plugins the recipes use (QTGMC, KNLMeansCL, Finesharp, VCFreq, deband, descale, ...)
 - The **Vapormint** app itself (Electron + React)
+
+The macOS build relies on Homebrew for FFmpeg, FFprobe, and VapourSynth. yt-dlp is managed in `~/Library/Application Support/Vapormint/tools/`.
 
 ---
 
@@ -181,18 +188,32 @@ The installer bundles the whole toolchain, so you never touch a terminal:
 | Path | Purpose |
 |------|---------|
 | `src/shared.ts` | Recipe model, the "brain" (evidence → recipe), receipts, self-tune |
-| `src/media.ts` | Decode, sampling, export orchestration against the bundled runtime |
+| `src/media.ts` | Decode, sampling, export orchestration, runtime tool resolution |
 | `src/main.ts` | Electron main: window, IPC, updater, feedback, diagnostics |
 | `src/App.tsx` | The UI (darkroom) |
 | `src/styles.css` | The design system (all colors are custom properties) |
-| `runtime/win32-x64/` | Bundled Python + FFmpeg + VapourSynth |
+| `src/mac-migration.ts` | macOS: import projects from native LQ's Cutting Floor |
+| `src/tool-updates.ts` | macOS: SHA256-verified yt-dlp downloads |
+| `src/update-release.ts` | Platform-aware release matching (`findCompatibleRelease`) |
+| `runtime/win32-x64/` | Bundled Python + FFmpeg + VapourSynth (Windows) |
 | `scripts/cf_analysis.py` | The pixel-analysis "brain" the recipes are derived from |
+| `scripts/build-mac-runtime.sh` | Mac runtime assembly script |
 | `docs/methodology.md` | Processing-chain methodology and decision tables |
-| `docs/source-guidance-research.md` | How the source-guidance verdicts are decided |
 
 ---
 
 ## Changelog
+
+### 2.2.x
+- macOS Apple Silicon port (DMG + ZIP installers, Homebrew runtime, Mac menu bar)
+- Native LQ's Cutting Floor project import on Mac (plist migration, recipe + completed status preserved)
+- Platform-aware update checker (`findCompatibleRelease` — both installers on one release tag)
+- SHA256-verified yt-dlp downloads on Mac
+- In-app dependency updater (yt-dlp self-update from Settings)
+- Thumbnailed clip list with status filters in Process tab
+- Sidebar pipeline status fix (overflow, layout)
+- Dynamic version from package.json (no more hardcoded version strings)
+- Design system: A24/Freshman (Cormorant Garamond + Inter + IBM Plex Mono), three palette themes (Notflix, Wholou, Disnee Plus) with dark + light variants
 
 ### 2.1.0
 - Export pipeline fixes: BestSource disk caching, deferred FFmpeg spawn, import-time pre-indexing
@@ -206,12 +227,10 @@ The installer bundles the whole toolchain, so you never touch a terminal:
 ### 2.0.0
 - Self-Tune auto-preview with evidence-based recipe write-back
 - Source Guidance: plain-language verdicts, checklists, video stats
-- Cinematic Darkroom UI (Space Grotesk / Space Mono, celluloid cream, light theme)
 - Batch export queue with per-clip progress + live progress bar
 - Render receipts (auditable export records)
 - Honest pixel callouts (tag-vs-pixel reconciliation)
 - Auto-updater, feedback reports, `diagnostics.log`
-- Bug fixes: `brainPaths()` asar handling, `exportClip`/`previewTune` exportRoot fallback, squirrel startup guard, full rebrand to Vapormint
 
 <details>
 <summary><b>0.3.x (LQ's Cutting Floor)</b></summary>

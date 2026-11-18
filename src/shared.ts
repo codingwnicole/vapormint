@@ -144,6 +144,7 @@ export interface ClipRecipe {
 }
 
 export interface SessionClip {
+  preserveImportedRecipe?: boolean;
   id: string;
   sourceId: string;
   name: string;

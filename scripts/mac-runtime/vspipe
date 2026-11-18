@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+export PYTHONHOME="$ROOT/python"
+export PYTHONPATH="$PYTHONHOME/lib/python3.12/site-packages"
+XDG_CONFIG_HOME=$(mktemp -d "${TMPDIR:-/tmp}/vapormint-vs.XXXXXXXX")
+export XDG_CONFIG_HOME
+trap 'rm -rf "$XDG_CONFIG_HOME"' EXIT HUP INT TERM
+"$PYTHONHOME/bin/python3" -m vapoursynth config >/dev/null
+"$PYTHONHOME/lib/python3.12/site-packages/vapoursynth/vspipe" "$@"
