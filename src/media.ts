@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import { createHash } from 'node:crypto';
+import { selectYtDlpAsset, newerVersion, type YtDlpRelease } from './tool-updates';
 import { fileURLToPath } from 'node:url';
 import { assertPublicVideoUrl, downloadCookieArguments, downloadFailureMessage, frameTimingEvidence, outputDimensions, scanEvidenceFromSamples, type ClipRecipe, type DownloadBrowser, type ExportRequest, type FrameTimingEvidence, type GuidanceConfidence, type PixelEvidence, type PreviewSettings, type RuntimeStatus, type SourceAnalysis, type StudioSource, type TaskProgress } from './shared';
 
@@ -48,11 +50,18 @@ async function executable(name: string) {
   const candidates = roots.flatMap((root) => name === 'vspipe'
     ? [path.join(root, 'Lib', 'site-packages', 'vapoursynth', file), path.join(root, file)]
     : [path.join(root, file)]);
+  if (process.platform === 'darwin' && name === 'yt-dlp') candidates.unshift(path.join(app.getPath('userData'), 'tools', `${process.platform}-${process.arch}`, file));
   for (const candidate of candidates) {
     try {
       await access(candidate, constants.X_OK);
       return candidate;
     } catch { /* Try the next packaged location. */ }
+  }
+  if (process.platform === 'darwin') {
+    for (const directory of ['/opt/homebrew/bin', '/usr/local/bin']) {
+      const candidate = path.join(directory, file);
+      try { await access(candidate, constants.X_OK); return candidate; } catch { /* Try the next location. */ }
+    }
   }
   return file;
 }
@@ -77,6 +86,43 @@ function capture(command: string, args: string[], signal?: AbortSignal) {
     child.on('error', reject);
     child.on('close', (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(stderr.trim() || `${path.basename(command)} exited with code ${code}`)));
   });
+}
+
+async function latestYtDlp() {
+  const response = await fetch('https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest', { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+  return selectYtDlpAsset(await response.json() as YtDlpRelease);
+}
+
+export async function checkMacToolUpdates() {
+  if (process.platform !== 'darwin') return [];
+  const current = (await capture(await executable('yt-dlp'), ['--version'])).stdout.trim();
+  try {
+    const latest = await latestYtDlp();
+    return [{name:'yt-dlp',current,latest:latest.version,updateAvailable:newerVersion(latest.version,current),checkFailed:false,note:'FFmpeg, FFprobe, and VapourSynth update with Vapormint.'}];
+  } catch (error) {
+    return [{name:'yt-dlp',current,latest:'',updateAvailable:false,checkFailed:true,note:error instanceof Error ? error.message : String(error)}];
+  }
+}
+
+export async function updateMacTool(name:string) {
+  if (process.platform !== 'darwin' || name !== 'yt-dlp') throw new Error('This tool cannot be updated independently on this platform.');
+  const asset = await latestYtDlp();
+  const directory = path.join(app.getPath('userData'), 'tools', `${process.platform}-${process.arch}`);
+  await mkdir(directory,{recursive:true});
+  const temp = await mkdtemp(path.join(directory, 'update-'));
+  try {
+    const response = await fetch(asset.url, { signal: AbortSignal.timeout(180000) });
+    if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length !== asset.size || createHash('sha256').update(bytes).digest('hex') !== asset.sha256) throw new Error('Downloaded yt-dlp did not match the official checksum.');
+    const binary = path.join(temp, 'yt-dlp');
+    await writeFile(binary,bytes,{mode:0o755});
+    const version = (await capture(binary,['--version'])).stdout.trim();
+    if (version !== asset.version) throw new Error('The downloaded yt-dlp reported an unexpected version.');
+    await rename(binary,path.join(directory,'yt-dlp'));
+    return {ok:true,message:`yt-dlp updated to ${version}.`,version};
+  } finally { await rm(temp,{recursive:true,force:true}); }
 }
 
 const pluginProbe = `import sys, vapoursynth as vs
@@ -142,7 +188,7 @@ async function runBrain(sourcePath: string, probe: Record<string, unknown>, sign
   const script = brainPaths();
   if (!existsSync(script)) return {}; // brain script not present; use the classic probe.
   try {
-    const { stdout } = await capture('python', [script, '--input', sourcePath, '--probe', JSON.stringify(probe), '--ffmpeg', await executable('ffmpeg')], signal);
+    const { stdout } = await capture(await executable(process.platform === 'win32' ? 'python' : 'python3'), [script, '--input', sourcePath, '--probe', JSON.stringify(probe), '--ffmpeg', await executable('ffmpeg')], signal);
     const parsed = JSON.parse(stdout) as { ok: boolean; error?: string; analysis?: BrainResult };
     if (!parsed.ok || !parsed.analysis) return {};
     return parsed.analysis;
@@ -315,8 +361,8 @@ export async function prepareSource(sourcePath: string, episodeLabel: string, pr
   } catch { /* Index will be built on first export instead — not fatal. */ }
   onProgress({ percent: 100, message: `Ready: ${episodeLabel}` });
   return {
-    id, sourcePath, playbackPath, thumbnailPath, fileUrl: pathToFileURL(playbackPath ?? sourcePath).href,
-    thumbnailUrl, displayName: path.basename(sourcePath, path.extname(sourcePath)),
+    id, sourcePath, playbackPath, thumbnailPath, fileUrl: pathToFileURL(playbackPath ?? sourcePath).href.replace('file://', 'local-media://local'),
+    thumbnailUrl: thumbnailUrl?.replace('file://', 'local-media://local'), displayName: path.basename(sourcePath, path.extname(sourcePath)),
     episodeLabel, progress: 0, finished: false, missing: false, sourceAnalysis,
   } satisfies StudioSource;
 }

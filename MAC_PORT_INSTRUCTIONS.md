@@ -1,3 +1,5 @@
+> Historical handoff for 2.2.1. The current Mac build and known limitations are documented in [README_MAC.txt](README_MAC.txt). The updater dependency and placeholder URL below do not describe the current release workflow.
+
 # Mac Port Instructions — Vapormint 2.2.1
 
 Port the Windows v2.2.1 codebase to macOS. The source code (App.tsx, shared.ts,

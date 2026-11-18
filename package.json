@@ -13,11 +13,14 @@
     "package": "electron-forge package",
     "make": "electron-forge make",
     "typecheck": "tsc --noEmit",
-    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/domain.selftest.mts && node src/sidebar.selftest.cjs && node scripts/verify-runtime-lock.cjs"
+    "check": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/domain.selftest.mts && node src/sidebar.selftest.cjs && node scripts/verify-runtime-lock.cjs",
+    "check:mac": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/mac-migration.selftest.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/update-release.selftest.mts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types src/tool-updates.selftest.mts"
   },
   "devDependencies": {
     "@electron-forge/cli": "latest",
+    "@electron-forge/maker-dmg": "^8.0.1",
     "@electron-forge/maker-squirrel": "latest",
+    "@electron-forge/maker-zip": "^8.0.1",
     "@electron-forge/plugin-vite": "latest",
     "@types/node": "latest",
     "@types/react": "latest",

@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+export PYTHONHOME="$ROOT/python"
+export PYTHONPATH="$PYTHONHOME/lib/python3.12/site-packages"
+exec "$PYTHONHOME/bin/python3" "$@"

@@ -40,11 +40,11 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
 2. If Windows SmartScreen warns ("Windows protected your PC"), click **More info** → **Run anyway**. The build is unsigned — that's why.
 3. That's it. Python 3.12, FFmpeg, FFprobe, and the VapourSynth core + plugins are all bundled.
 
-<details>
-<summary><b>macOS — porting notes (in progress)</b></summary>
+### macOS (Apple Silicon)
 
-Vapormint is cross-platform by design (Electron + a bundled Python/VapourSynth runtime), but the macOS build lags the Windows build. See [`MAC_PORT_INSTRUCTIONS.md`](MAC_PORT_INSTRUCTIONS.md) for the ordered edit list to bring the 2.0 feature set (fonts, CSP, auto-updater, self-tune, source guidance, feedback, diagnostics) onto the Mac build.
-</details>
+The Apple Silicon port requires macOS 15 or newer. A Mac release asset has not yet been published; see [`README_MAC.txt`](README_MAC.txt) for the current test build and source-build requirements. Intel Macs are not supported by the current build.
+
+The Mac port can import copies of projects from the native LQ's Cutting Floor library, including custom library folders. Originals remain in place. Imported recipes and completed status are preserved when opening clips. The app checks for compatible Mac releases and opens the release page for installation; yt-dlp can also be updated separately in Settings. App updates are not automatic.
 
 ### System requirements (Windows)
 
@@ -139,6 +139,7 @@ cd vapormint
 npm install
 npm run check        # domain + sidebar self-tests
 npm run typecheck    # tsc --noEmit
+npm run check:mac    # Mac migration and update checks
 npm run make         # produce VapormintSetup.exe (Windows) + packaged app
 ```
 
