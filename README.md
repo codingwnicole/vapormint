@@ -204,7 +204,7 @@ The macOS build relies on Homebrew for FFmpeg, FFprobe, and VapourSynth. yt-dlp 
 
 ## Changelog
 
-### 2.2.x
+### 2.3.0
 - macOS Apple Silicon port (DMG + ZIP installers, Homebrew runtime, Mac menu bar)
 - Native LQ's Cutting Floor project import on Mac (plist migration, recipe + completed status preserved)
 - Platform-aware update checker (`findCompatibleRelease` — both installers on one release tag)
