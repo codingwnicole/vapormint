@@ -51,7 +51,7 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
    sudo xattr -cr /Applications/Vapormint.app
    ```
    This removes the quarantine flag macOS adds to downloaded apps. Without it, Gatekeeper will say the app is "damaged" because the build is unsigned. You only need to do this once.
-4. FFmpeg, FFprobe, yt-dlp, and VapourSynth must be installed via Homebrew — the Mac build does not bundle them (yet).
+4. That's it. Python 3.12, FFmpeg, FFprobe, yt-dlp, and VapourSynth core + plugins are all bundled — same as Windows.
 
 **System requirements:** macOS 15+, Apple Silicon (M1 or later). Intel Macs are not supported.
 
@@ -184,7 +184,7 @@ The Windows installer bundles the whole toolchain, so you never touch a terminal
 - **VapourSynth** core + the plugins the recipes use (QTGMC, KNLMeansCL, Finesharp, VCFreq, deband, descale, ...)
 - The **Vapormint** app itself (Electron + React)
 
-The macOS build relies on Homebrew for FFmpeg, FFprobe, and VapourSynth. yt-dlp is managed in `~/Library/Application Support/Vapormint/tools/`.
+Both platforms bundle the full toolchain. On macOS, yt-dlp can also self-update from `~/Library/Application Support/Vapormint/tools/`.
 
 ---
 
@@ -210,7 +210,7 @@ The macOS build relies on Homebrew for FFmpeg, FFprobe, and VapourSynth. yt-dlp 
 ## Changelog
 
 ### 2.3.0
-- macOS Apple Silicon port (DMG + ZIP installers, Homebrew runtime, Mac menu bar)
+- macOS Apple Silicon port (DMG + ZIP installers, bundled runtime, Mac menu bar)
 - Native LQ's Cutting Floor project import on Mac (plist migration, recipe + completed status preserved)
 - Platform-aware update checker (`findCompatibleRelease` — both installers on one release tag)
 - SHA256-verified yt-dlp downloads on Mac
