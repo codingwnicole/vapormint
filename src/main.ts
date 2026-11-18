@@ -10,7 +10,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { importMacProjects } from './mac-migration';
 import { findCompatibleRelease, type Release } from './update-release';
 import { tmpdir } from 'node:os';
-import { checkMacToolUpdates, updateMacTool, downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
+import { capture, executable, checkMacToolUpdates, updateMacTool, downloadPublicVideo, getRuntimeStatus, prepareSource, probeMedia, processClip, stopMediaProcesses, tunePreview } from './media';
 import { buildReceipt, assertPublicVideoUrl, defaultRecipe, safeFileName, type DownloadBrowser, type ExportRequest, type FeedbackReport, type ProjectCard, type ReelClip, type StudioPreferences, type StudioSession, type StudioSource, type ToolVersionInfo, type UpdateInfo, type WorkspaceState } from './shared';
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'local-media', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -568,8 +568,6 @@ else void app.whenReady().then(async () => {
   ipcMain.handle('library:change', (_event, session: StudioSession, libraryPath: string) => changeLibrary(session, libraryPath));
   ipcMain.handle('location:choose', (_event, kind: 'libraryPath' | 'downloadPath' | 'exportPath', current: string) => chooseLocation(kind, current));
   ipcMain.handle('runtime:status', getRuntimeStatus);
-  ipcMain.handle('tools:check', checkMacToolUpdates);
-  ipcMain.handle('tools:update', async (_event, name: string) => { try { return await updateMacTool(name); } catch (error) { return {ok:false, message:errorMessage(error)}; } });
   ipcMain.handle('export:start', async (_event, request: ExportRequest) => {
     try { return await exportClip(request); } catch (e) { console.error('[export:start] FAILED', e); throw e; }
   });
@@ -632,6 +630,51 @@ else void app.whenReady().then(async () => {
     // don't run a feed server route the "install" through the release page.
     const url = latestRelease?.url ?? RELEASE_PAGE;
     await shell.openExternal(url);
+  });
+
+  // ---- Tool updates ----
+  // Check bundled yt-dlp and ffmpeg/ffprobe against upstream GitHub releases.
+  // VapourSynth + plugins are not auto-updatable (complex native build).
+  const toolLatestVersion = async (repo: string): Promise<string> => {
+    const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } });
+    if (!res.ok) throw new Error(`GitHub ${res.status}`);
+    const { tag_name } = (await res.json()) as { tag_name: string };
+    return tag_name;
+  };
+
+  ipcMain.handle('tools:check', async (): Promise<ToolVersionInfo[]> => {
+    if (process.platform === 'darwin') return checkMacToolUpdates();
+    const runtime = await getRuntimeStatus();
+    const checks: Array<{ name: string; key: keyof NonNullable<typeof runtime.versions>; repo: string }> = [
+      { name: 'yt-dlp', key: 'ytDlp', repo: 'yt-dlp/yt-dlp' },
+      { name: 'ffmpeg', key: 'ffmpeg', repo: 'BtbN/FFmpeg-Builds' },
+    ];
+    return Promise.all(checks.map(async ({ name, key, repo }): Promise<ToolVersionInfo> => {
+      const current = runtime.versions?.[key] ?? '';
+      try {
+        const latest = await toolLatestVersion(repo);
+        // ponytail: naive string compare — good enough for YYYY.MM.DD (yt-dlp) and semver-ish tags
+        const updateAvailable = !!current && !!latest && latest.replace(/^v/, '') !== current.replace(/^v/, '').split('-')[0];
+        return { name, current, latest, updateAvailable, checkFailed: false, note: updateAvailable ? `${latest} available` : 'Up to date' };
+      } catch {
+        return { name, current, latest: '', updateAvailable: false, checkFailed: true, note: 'Version check failed (offline?)' };
+      }
+    }));
+  });
+
+  ipcMain.handle('tools:update', async (_event, name: string): Promise<{ ok: boolean; message: string; version?: string }> => {
+    if (process.platform === 'darwin') { try { return await updateMacTool(name); } catch (error) { return {ok:false, message:errorMessage(error)}; } }
+    // Only yt-dlp supports in-place self-update via its own --update flag.
+    // ffmpeg requires downloading a build archive — not safe to swap while running.
+    if (name !== 'yt-dlp') return { ok: false, message: `${name} cannot be updated in-place. Download a new build from the release page.` };
+    try {
+      const ytDlp = await executable('yt-dlp');
+      const { stdout } = await capture(ytDlp, ['--update']);
+      const version = stdout.match(/(\d{4}\.\d{2}\.\d{2})/)?.[1] ?? '';
+      return { ok: true, message: stdout.trim(), version };
+    } catch (e) {
+      return { ok: false, message: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   // ---- Feedback ----
