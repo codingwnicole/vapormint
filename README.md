@@ -51,6 +51,11 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
    sudo xattr -cr /Applications/Vapormint.app
    ```
    This removes the quarantine flag macOS adds to downloaded apps. Without it, Gatekeeper will say the app is "damaged" because the build is unsigned. You only need to do this once.
+
+   **No admin password?** Install to your home folder instead:
+   ```bash
+   mkdir -p ~/Applications && cp -R /Volumes/Vapormint/Vapormint.app ~/Applications/ && xattr -cr ~/Applications/Vapormint.app
+   ```
 4. That's it. Python 3.12, FFmpeg, FFprobe, yt-dlp, and VapourSynth core + plugins are all bundled — same as Windows.
 
 **System requirements:** macOS 15+, Apple Silicon (M1 or later). Intel Macs are not supported.
@@ -142,7 +147,7 @@ Crop → Deinterlace → Debilinear → Denoise → Sharpen → Crop
 Requires Node.js (tested on Node 24) and npm.
 
 ```bash
-git clone https://github.com/hxxliz/vapormint.git
+git clone https://github.com/codingwnicole/vapormint.git
 cd vapormint
 npm install
 npm run check        # domain + sidebar self-tests
@@ -161,7 +166,7 @@ npm run make         # produce installer for the current platform
 
 ## Releases
 
-Releases live on [GitHub](https://github.com/hxxliz/vapormint/releases). Each release attaches platform-specific assets:
+Releases live on [GitHub](https://github.com/codingwnicole/vapormint/releases). Each release attaches platform-specific assets:
 
 | Asset | Platform | What it is |
 |-------|----------|-----------|
