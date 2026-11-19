@@ -20,7 +20,14 @@ const config: ForgeConfig = {
     setupExe: 'VapormintSetup.exe',
     setupIcon: 'assets/icon.ico',
     ...(certificateFile && certificatePassword ? { certificateFile, certificatePassword } : {}),
-  }), new MakerDMG({ name: 'Vapormint' }), new MakerZIP({}, ['darwin'])],
+  }), new MakerDMG({
+    name: 'Vapormint',
+    contents: (opts: { appPath: string }) => [
+      { x: 448, y: 344, type: 'link', path: '/Applications' },
+      { x: 192, y: 344, type: 'file', path: opts.appPath },
+      { x: 192, y: 150, type: 'file', path: 'scripts/Install Vapormint.command' },
+    ],
+  }), new MakerZIP({}, ['darwin'])],
   plugins: [
     new VitePlugin({
       build: [

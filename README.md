@@ -45,18 +45,19 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
 ### macOS (Apple Silicon)
 
 1. Download **`Vapormint-darwin-arm64.dmg`** from the [latest release](#releases).
-2. Open the DMG and drag Vapormint to Applications.
-3. **Before launching**, open Terminal and run:
+2. Open the DMG and double-click **"Install Vapormint"**. It installs the app and clears the macOS quarantine flag automatically — no Terminal or admin password needed.
+3. That's it. Python 3.12, FFmpeg, FFprobe, yt-dlp, and VapourSynth core + plugins are all bundled — same as Windows.
+
+<details>
+<summary>Manual install (drag-and-drop)</summary>
+
+1. Drag Vapormint to Applications.
+2. Open Terminal and run:
    ```bash
    sudo xattr -cr /Applications/Vapormint.app
    ```
-   This removes the quarantine flag macOS adds to downloaded apps. Without it, Gatekeeper will say the app is "damaged" because the build is unsigned. You only need to do this once.
-
-   **No admin password?** Install to your home folder instead:
-   ```bash
-   mkdir -p ~/Applications && cp -R /Volumes/Vapormint/Vapormint.app ~/Applications/ && xattr -cr ~/Applications/Vapormint.app
-   ```
-4. That's it. Python 3.12, FFmpeg, FFprobe, yt-dlp, and VapourSynth core + plugins are all bundled — same as Windows.
+   This removes the quarantine flag macOS adds to unsigned apps. Without it, Gatekeeper will say the app is "damaged." You only need to do this once.
+</details>
 
 **System requirements:** macOS 15+, Apple Silicon (M1 or later). Intel Macs are not supported.
 
