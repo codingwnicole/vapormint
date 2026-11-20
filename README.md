@@ -51,7 +51,8 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
    sudo xattr -cr /Applications/Vapormint.app
    ```
    This removes the quarantine flag macOS adds to unsigned apps. Without it, Gatekeeper will say the app is "damaged." You only need to do this once.
-4. That's it. Python 3.12, FFmpeg, FFprobe, yt-dlp, and VapourSynth core + plugins are all bundled — same as Windows.
+   
+5. That's it. Python 3.12, FFmpeg, FFprobe, yt-dlp, and VapourSynth core + plugins are all bundled — same as Windows.
 
 **System requirements:** macOS 15+, Apple Silicon (M1 or later). Intel Macs are not currently supported.
 
