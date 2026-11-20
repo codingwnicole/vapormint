@@ -649,9 +649,9 @@ else void app.whenReady().then(async () => {
       await new Promise<void>((resolve, reject) => fileStream.end(() => resolve()));
       reply({ status: 'downloading', version: latestRelease.tag, message: 'Installing…', percent: 90 });
       const { stdout } = await capture('hdiutil', ['attach', dmgPath, '-nobrowse', '-readonly', '-mountrandom', tmpdir()]);
-      const mountLine = stdout.split('\n').find(l => l.includes('/Volumes/')) ?? '';
-      const mountPoint = mountLine.replace(/.*?(\/Volumes\/.*)/, '$1').trim();
-      if (!mountPoint) throw new Error('Could not mount DMG');
+      const mountLine = stdout.trim().split('\n').pop() ?? '';
+      const mountPoint = mountLine.split('\t').pop()?.trim() ?? '';
+      if (!mountPoint || !mountPoint.startsWith('/')) throw new Error('Could not mount DMG');
       try {
         const apps = (await readdir(mountPoint)).filter(f => f.endsWith('.app'));
         if (!apps.length) throw new Error('No .app found in DMG');
