@@ -656,7 +656,7 @@ else void app.whenReady().then(async () => {
         const apps = (await readdir(mountPoint)).filter(f => f.endsWith('.app'));
         if (!apps.length) throw new Error('No .app found in DMG');
         const src = path.join(mountPoint, apps[0]);
-        const dest = path.join('/Applications', apps[0]);
+        const dest = path.resolve(process.execPath, '../../..');
         await rm(dest, { recursive: true, force: true });
         await cp(src, dest, { recursive: true });
         await capture('xattr', ['-cr', dest]).catch(() => {});
