@@ -202,7 +202,7 @@ async function projectCards(preferences: StudioPreferences): Promise<ProjectCard
       const session = normalizeSession(JSON.parse(await readFile(sessionFile(entry.name, preferences), 'utf8')) as StudioSession);
       const thumbnailPath = session.sources.find((source) => source.thumbnailPath)?.thumbnailPath;
       let thumbnailUrl: string | undefined;
-      if (thumbnailPath) try { await access(thumbnailPath); thumbnailUrl = pathToFileURL(thumbnailPath).href; } catch { /* Keep card text-only. */ }
+      if (thumbnailPath) try { await access(thumbnailPath); thumbnailUrl = pathToFileURL(thumbnailPath).href.replace('file://', 'local-media://local'); } catch { /* Keep card text-only. */ }
       return { id: session.id, name: session.name, updated: session.updated, thumbnailUrl, sourceCount: session.sources.length, clipCount: session.clips.length, completedCount: session.clips.filter((clip) => clip.completed).length } satisfies ProjectCard;
     } catch { return undefined; }
   }));

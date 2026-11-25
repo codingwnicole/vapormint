@@ -717,7 +717,7 @@ function NavIcon({ name }: { name: ViewName }) {
 function ClipReel({ session }: { session: StudioSession }) {
   const ref = useRef<HTMLVideoElement>(null);
   const idx = useRef(0);
-  const [clips, setClips] = useState<{ url: string; poster?: string; start: number; end: number }[]>([]);
+  const [clips, setClips] = useState<{ url: string; start: number; end: number }[]>([]);
 
   useEffect(() => {
     window.cuttingFloor.loadReelClips().then((items) => {
@@ -731,19 +731,20 @@ function ClipReel({ session }: { session: StudioSession }) {
     const v = ref.current;
     if (!v || !clips.length) return;
     let url = '';
-    const snapshotPoster = () => {
+    const holdFrame = () => {
       try {
         const c = document.createElement('canvas');
         c.width = v.videoWidth; c.height = v.videoHeight;
         c.getContext('2d')!.drawImage(v, 0, 0);
-        v.poster = c.toDataURL('image/jpeg', 0.5);
+        v.style.backgroundImage = `url(${c.toDataURL('image/jpeg', 0.5)})`;
+        v.style.backgroundSize = 'cover';
       } catch {}
     };
     const load = () => {
       const clip = clips[idx.current % clips.length];
       const seekPlay = () => { v.currentTime = clip.start; v.play().catch(() => {}); };
       if (url !== clip.url) {
-        snapshotPoster();
+        holdFrame();
         url = clip.url;
         v.src = clip.url;
         v.addEventListener('loadedmetadata', seekPlay, { once: true });
@@ -759,7 +760,7 @@ function ClipReel({ session }: { session: StudioSession }) {
     const thumb = session.sources.find((s) => s.thumbnailUrl);
     return thumb?.thumbnailUrl ? <img src={thumb.thumbnailUrl} alt="" /> : <span className="preview-empty">&#9654;</span>;
   }
-  return <video ref={ref} poster={clips[0]?.poster} muted playsInline />;
+  return <video ref={ref} muted playsInline />;
 }
 
 function Home({ session, projects, busy, onNewProject, onOpenProject, onRenameProject, onDeleteProject, onImport, onSeason, onWatch, onDownload, onOpenSource }: { session: StudioSession; projects: ProjectCard[]; busy: boolean; onNewProject(): void; onOpenProject(id: string): void; onRenameProject(id: string): void; onDeleteProject(id: string): void; onImport(): void; onSeason(): void; onWatch(): void; onDownload(url: string): boolean; onOpenSource(id: string): void }) {
