@@ -687,11 +687,16 @@ else void app.whenReady().then(async () => {
         // Copy beside the app first; only swap once the copy is complete, so a failed copy
         // never leaves the user with no Vapormint at all.
         const staged = `${dest}.update`;
+        const old = `${dest}.old`;
         await rm(staged, { recursive: true, force: true });
+        await rm(old, { recursive: true, force: true });
         await cp(src, staged, { recursive: true });
         await capture('xattr', ['-cr', staged]).catch(() => {});
-        await rm(dest, { recursive: true, force: true });
+        // Rename the running app aside instead of deleting it — macOS cannot
+        // rm files that are memory-mapped by the running process (ENOTEMPTY).
+        await rename(dest, old);
         await rename(staged, dest);
+        await rm(old, { recursive: true, force: true }).catch(() => {});
       } finally { await capture('hdiutil', ['detach', mountPoint, '-force']).catch(() => {}); }
       await rm(dmgPath, { force: true }).catch(() => {});
       reply({ status: 'current', version: latestRelease.tag, message: 'Update installed — restart to use the new version', percent: 100 });
