@@ -40,10 +40,13 @@ from typing import List, Optional, Tuple
 # ---------------------------------------------------------------------------
 MIN_SAMPLES = 8
 MAX_SAMPLES = 32             # spread-pass frame cap (kept low: Python math)
-COMB_THRESHOLD = 40          # pixels differing from BOTH vertical neighbours
+COMB_THRESHOLD = 40          # luma step that counts as a comb edge
+COMB_INTERLACED = 250        # comb pixels per 100k = interlaced. Mirrors shared.ts COMB_INTERLACED.
+                             # ponytail: calibrated on real progressive (0), woven 1080i (~700), heavy grain (~150)
 TC_SAMPLE = 30               # consecutive frames for cadence
 TC_DUP_EPS = 2.0             # mean-abs-diff below this = a held/duplicate pair
-Y_ANALYSIS_W = 640           # spread-pass luma width (keeps the loops fast)
+Y_ANALYSIS_W = 640           # analysis window width (keeps the loops fast)
+Y_ANALYSIS_H = 480           # analysis window height (native rows, never resampled)
 FREEZE_MAD = 1.0             # first-frame mean-abs-diff below this = frozen
 
 
@@ -85,9 +88,13 @@ def _decode_luma(ffmpeg: str, path: str, start_s: float, duration_s: float,
     frames. Returns (raw_luma_bytes, out_w, out_h, scale)."""
     ffprobe_bin = _ffprobe_bin(ffmpeg)
     ow, oh = probe_dims(ffprobe_bin, path)
-    scale = scale_w / ow
-    W = scale_w
-    H = max(2, int(round(oh * scale)))
+    # Center-CROP at native resolution instead of scaling: vertical resampling
+    # blends the two fields of an interlaced frame and erases the comb pattern
+    # comb_pixels() looks for, and downscaling also averages away real grain.
+    # ponytail: centre window only; sample several windows if edges matter.
+    W = min(ow, scale_w) // 2 * 2
+    H = min(oh, Y_ANALYSIS_H) // 2 * 2
+    scale = 1.0
     cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-an"]
     if start_s > 0:
         cmd += ["-ss", f"{start_s:.3f}"]
@@ -95,9 +102,9 @@ def _decode_luma(ffmpeg: str, path: str, start_s: float, duration_s: float,
     if duration_s > 0:
         cmd += ["-t", f"{duration_s:.3f}"]
     if select:
-        cmd += ["-vf", f"select='{select}',scale={W}:{H},format=gray"]
+        cmd += ["-vf", f"select='{select}',crop={W}:{H},format=gray"]
     else:
-        cmd += ["-vf", f"scale={W}:{H},format=gray"]
+        cmd += ["-vf", f"crop={W}:{H},format=gray"]
     if frames:
         cmd += ["-frames:v", str(frames)]
     cmd += ["-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"]
@@ -111,20 +118,26 @@ def _decode_luma(ffmpeg: str, path: str, start_s: float, duration_s: float,
 # Pixel metrics (pure functions on luma bytes; mirror pixels.rs exactly)
 # ---------------------------------------------------------------------------
 def comb_pixels(frame: bytes, w: int, h: int) -> int:
-    """Luma pixels differing from BOTH vertical neighbours by > COMB_THRESHOLD
-    — the interlace comb-edge signal. Interlacing -> thousands; progressive
-    stays near its fine-detail floor."""
-    if h < 3:
+    """Interlace comb pixels: the pixel pulls the SAME way away from both
+    other-field neighbours (y±1) by > COMB_THRESHOLD, while agreeing with its
+    own field (y±2). Grain fails the own-field test, so heavy noise no longer
+    reads as interlacing. Interlacing -> thousands; progressive -> tens."""
+    if h < 5:
         return 0
     thr = COMB_THRESHOLD
     n = 0
-    for y in range(1, h - 1):
+    for y in range(2, h - 2):
+        up2 = (y - 2) * w
         up = (y - 1) * w
         mid = y * w
         dn = (y + 1) * w
+        dn2 = (y + 2) * w
         for x in range(w):
             m = frame[mid + x]
-            if abs(m - frame[up + x]) > thr and abs(m - frame[dn + x]) > thr:
+            a = m - frame[up + x]
+            b = m - frame[dn + x]
+            if ((a > thr and b > thr) or (a < -thr and b < -thr)) \
+                    and abs(m - frame[up2 + x]) + abs(m - frame[dn2 + x]) < thr:
                 n += 1
     return n
 
@@ -282,7 +295,8 @@ def analyze(ffmpeg: str, path: str, duration_s: float, fps: float,
         f.comb = comb_pixels(f.raw, f.w, f.h)
         f.levels = distinct_luma_levels(f.raw)
         f.ndiff = neighbor_diff(f.raw, f.w, f.h)
-    comb_med = statistics.median(f.comb for f in frames)
+    # Density per 100k analysed pixels so the threshold is independent of window size.
+    comb_med = statistics.median(f.comb for f in frames) * 100_000 / max(1, frames[0].w * frames[0].h)
     levels_med = statistics.median(f.levels for f in frames)
     ndiff_med = statistics.median(f.ndiff for f in frames)
 
@@ -327,7 +341,7 @@ def analyze(ffmpeg: str, path: str, duration_s: float, fps: float,
         banding = 0
         banding_note = None
 
-    scan_kind = "Interlaced" if comb_med >= 400 else "Progressive"
+    scan_kind = "Interlaced" if comb_med >= COMB_INTERLACED else "Progressive"
     analysis = {
         "scanType": scan_kind,
         "scanEvidence": {
@@ -337,7 +351,7 @@ def analyze(ffmpeg: str, path: str, duration_s: float, fps: float,
             "distinctLumaLevelsMedian": int(levels_med),
             "neighborDiffMedian": round(ndiff_med, 3),
             "classification": scan_kind,
-            "confidence": ("High" if comb_med >= 400 else "Medium"),
+            "confidence": ("High" if comb_med >= COMB_INTERLACED else "Medium"),
         },
         "frameTiming": {
             "sampledFrames": cad.frames,
@@ -359,7 +373,7 @@ def analyze(ffmpeg: str, path: str, duration_s: float, fps: float,
         "distinctLumaLevels": int(levels_med),
         "openingIssue": opening_issue,
         "qualitySummary": (
-            f"scan={'Interlaced' if comb_med >= 400 else 'Progressive'}, "
+            f"scan={'Interlaced' if comb_med >= COMB_INTERLACED else 'Progressive'}, "
             f"timing={cad.kind or 'Unknown'}, banding={banding}, noise={ndiff_med:.1f}"
         ),
     }

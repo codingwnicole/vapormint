@@ -1,5 +1,23 @@
 # LQ’s Cutting Floor — Changelog
 
+## 2.3.5 — November 24, 2026
+
+### Fixed
+
+- Exports no longer carry the source's chapter track or 5.1 audio (now stereo), both suspects for Photoshop refusing to open clips.
+- Self-tune no longer overwrites recipe edits when you leave and return to Process clips, and Export waits until self-tune finishes.
+- Self-tune judges interlacing, banding, noise, and softness independently instead of nearly always choosing denoise only; interlace detection now works on real footage.
+- Rotation is applied in FFmpeg compatibility exports and self-tune previews.
+- Batch export locks the workspace, keeps going past a failed clip, and can be stopped from Find moments.
+- Receipts are named after the actual output file and appear after single exports; the Engine Policy menu shows the clip's real setting; cancelling no longer shows an error.
+- Mac updater: a full disk can no longer crash the app, and a failed copy can no longer remove the installed app.
+
+### Added
+
+- Windows in-app updates: "Install update" downloads and installs the new version, then asks to restart.
+- "✦ self-tune applied this" marks on settings self-tune turned on.
+- Sources with an empty analysis (imported from the old Mac app) analyze themselves when opened, plus an "Analyze N empty sources" button.
+
 ## 0.3.24 — September 25, 2026
 
 ### Fixed

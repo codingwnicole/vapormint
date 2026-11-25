@@ -756,3 +756,5 @@ body, .app-shell, .titlebar { transition: background .2s ease, color .2s ease; }
   .mark-controls { min-height: 88px; }
   .crop-editor { min-height: 480px; }
 }
+
+.tuned-mark { margin-left: 8px; color: var(--accent); font-style: normal; letter-spacing: .04em; text-transform: none; }

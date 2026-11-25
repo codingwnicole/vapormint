@@ -31,8 +31,8 @@
   "interlaced-pattern": {
     "banding": 0,
     "bandingNote": null,
-    "combPixels": 12540,
-    "distinctLumaLevels": 256,
+    "combPixels": 10182,
+    "distinctLumaLevels": 220,
     "frameTiming": {
       "confidence": "High",
       "detail": "progressive (dup fraction 0.00)",
@@ -43,15 +43,15 @@
       "runVariety": 0,
       "sampledFrames": 30
     },
-    "noise": 7.003,
+    "noise": 30.653,
     "openingIssue": null,
-    "qualitySummary": "scan=Interlaced, timing=Constant sample, banding=0, noise=7.0",
+    "qualitySummary": "scan=Interlaced, timing=Constant sample, banding=0, noise=30.7",
     "scanEvidence": {
       "classification": "Interlaced",
-      "combPixelsMedian": 12540,
+      "combPixelsMedian": 10182,
       "confidence": "High",
-      "distinctLumaLevelsMedian": 256,
-      "neighborDiffMedian": 7.003,
+      "distinctLumaLevelsMedian": 220,
+      "neighborDiffMedian": 30.653,
       "sampledFrames": 32,
       "sampledSeconds": 2.0
     },
@@ -60,8 +60,8 @@
   "moving": {
     "banding": 0,
     "bandingNote": null,
-    "combPixels": 2345,
-    "distinctLumaLevels": 256,
+    "combPixels": 0,
+    "distinctLumaLevels": 220,
     "frameTiming": {
       "confidence": "High",
       "detail": "progressive (dup fraction 0.00)",
@@ -72,18 +72,18 @@
       "runVariety": 0,
       "sampledFrames": 30
     },
-    "noise": 2.321,
+    "noise": 9.12,
     "openingIssue": null,
-    "qualitySummary": "scan=Interlaced, timing=Constant sample, banding=0, noise=2.3",
+    "qualitySummary": "scan=Progressive, timing=Constant sample, banding=0, noise=9.1",
     "scanEvidence": {
-      "classification": "Interlaced",
-      "combPixelsMedian": 2345,
-      "confidence": "High",
-      "distinctLumaLevelsMedian": 256,
-      "neighborDiffMedian": 2.321,
+      "classification": "Progressive",
+      "combPixelsMedian": 0,
+      "confidence": "Medium",
+      "distinctLumaLevelsMedian": 220,
+      "neighborDiffMedian": 9.12,
       "sampledFrames": 32,
       "sampledSeconds": 2.0
     },
-    "scanType": "Interlaced"
+    "scanType": "Progressive"
   }
 }

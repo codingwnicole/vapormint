@@ -151,6 +151,9 @@ export interface SessionClip {
   start: number;
   end: number;
   completed: boolean;
+  thumbnailUrl?: string;
+  /** The recipe patch the last self-tune applied; drives the "self-tune applied this" marks. */
+  selfTuned?: Partial<ClipRecipe>;
   outputPath?: string;
   processingEngine?: string;
   fallbackReason?: string;
@@ -571,35 +574,33 @@ export interface PreviewSettings {
   readonly sharpen: boolean;
 }
 
+// Evidence thresholds. COMB_INTERLACED mirrors scripts/cf_analysis.py (comb pixels per 100k).
+// ponytail: calibrated on a handful of real + synthetic clips; tune here if verdicts look off.
+export const COMB_INTERLACED = 250;
+const BANDED_LEVELS = 96;
+const NOISY_DIFF = 4.5;
+const SOFT_DIFF = 1.5;
+
+const isCleanEvidence = (e: PixelEvidence) => e.combPixels < COMB_INTERLACED && e.distinctLumaLevels > BANDED_LEVELS && e.neighborDiff < NOISY_DIFF;
+
 /**
- * Translate measured pixel evidence into the next candidate settings.
- * Mirrors Rust `PreviewSettings::for_evidence` exactly:
- * - noisy   → prefer denoise over deinterlace (noise, not combs, is the defect)
- * - banded  → deband
- * - comb    → deinterlace
- * - soft    → sharpen (only when no other fix is pending)
+ * Translate measured pixel evidence into candidate settings. Each defect is judged on its
+ * own — noise no longer vetoes deinterlace/deband (the old logic did, so almost everything
+ * ended up "denoise only").
+ * `baseline` adds the safe default (light denoise, or sharpen for a soft source) that the
+ * first pick gets; later loop rounds measure an already-processed preview and only add fixes
+ * the pixels still demand.
  */
-export function previewSettingsForEvidence(evidence: PixelEvidence): PreviewSettings {
-  const comb = evidence.combPixels;
-  const levels = evidence.distinctLumaLevels;
-  const noise = evidence.neighborDiff;
-  const clean = comb < 32 && levels > 96 && noise < 4.5;
-  // Even a clean source gets a safe baseline: light denoise (which carries implicit
-  // sharpening). Community consensus is that VS should always apply *something* — the
-  // "do nothing" path is the explicit As-is alternative, not the auto recommendation.
-  if (clean) return { deinterlace: false, deband: false, denoise: true, sharpen: false };
-  // A noisy frame's neighbor differences are grain, not interlace combs — denoise it.
-  const noisy = noise >= 4.5;
-  // Banding is a collapsed palette (few distinct levels) that is not noise.
-  const banded = levels < 96 && noise < 4.5;
-  // Interlace combs are real comb structure, not grain or banding.
-  const interlaced = comb >= 32 && noise < 4.5;
-  const soft = noise < 4.5 && !banded && !interlaced;
+export function previewSettingsForEvidence(evidence: PixelEvidence, baseline = true): PreviewSettings {
+  const interlaced = evidence.combPixels >= COMB_INTERLACED;
+  const banded = evidence.distinctLumaLevels < BANDED_LEVELS;
+  const noisy = evidence.neighborDiff >= NOISY_DIFF;
+  const soft = evidence.neighborDiff < SOFT_DIFF && !interlaced && !banded;
   return {
     deinterlace: interlaced,
     deband: banded,
-    denoise: noisy || interlaced,
-    sharpen: soft,
+    denoise: noisy || (baseline && !soft && !banded),
+    sharpen: baseline && soft,
   };
 }
 
@@ -632,12 +633,12 @@ export async function runPreviewLoop(
   let settings = start;
   for (let round = 1; round <= maxRounds; round++) {
     const evidence = await renderAndAnalyze(settings, round);
-    const derived = previewSettingsForEvidence(evidence);
+    const derived = previewSettingsForEvidence(evidence, false);
     const merged: PreviewSettings = { deinterlace: settings.deinterlace || derived.deinterlace, deband: settings.deband || derived.deband, denoise: settings.denoise || derived.denoise, sharpen: settings.sharpen || derived.sharpen };
     const changed = merged.deinterlace !== settings.deinterlace || merged.deband !== settings.deband || merged.denoise !== settings.denoise || merged.sharpen !== settings.sharpen;
     rounds.push({ round, evidence, applied: merged, newFix: changed });
     settings = merged;
-    const clean = evidence.combPixels < 32 && evidence.distinctLumaLevels > 96 && evidence.neighborDiff < 4.5;
+    const clean = isCleanEvidence(evidence);
     if (clean || !changed) {
       return { rounds, converged: clean, settings };
     }

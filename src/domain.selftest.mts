@@ -149,15 +149,18 @@ console.log('receipt self-check passed');
   const banded = { combPixels: 0, distinctLumaLevels: 40, neighborDiff: 0.5 };
   assert.ok(previewSettingsForEvidence(banded).deband, 'low distinct levels → deband');
   assert.ok(!previewSettingsForEvidence(banded).denoise, 'banded frame is not noise');
-  const clean = { combPixels: 0, distinctLumaLevels: 240, neighborDiff: 1.0 };
+  const clean = { combPixels: 0, distinctLumaLevels: 240, neighborDiff: 2.0 };
   const cs = previewSettingsForEvidence(clean);
   assert.ok(!cs.deinterlace && !cs.deband && cs.denoise && !cs.sharpen, 'clean → safe baseline denoise only');
-  // A "soft" frame (levels>96, comb<32, low noise) is exactly the is_clean() region,
-  // so for_evidence returns the clean default before the sharpen branch fires — this
-  // matches the Rust logic, where soft() is only reachable when is_clean() is also true.
   const soft = { combPixels: 0, distinctLumaLevels: 120, neighborDiff: 1.0 };
-  assert.ok(!previewSettingsForEvidence(soft).sharpen, 'clean-region frame → no sharpen (is_clean short-circuit)');
-  const comb = { combPixels: 60, distinctLumaLevels: 200, neighborDiff: 1.0 };
+  const ss = previewSettingsForEvidence(soft);
+  assert.ok(ss.sharpen && !ss.denoise, 'soft clean frame → sharpen instead of denoising it softer');
+  // Noise no longer vetoes other fixes: a grainy, interlaced, banded frame gets all three.
+  const messy = previewSettingsForEvidence({ combPixels: 900, distinctLumaLevels: 60, neighborDiff: 9 });
+  assert.ok(messy.deinterlace && messy.deband && messy.denoise, 'independent fixes for independent defects');
+  // Later loop rounds (baseline=false) only add what the processed preview still shows.
+  assert.deepEqual(previewSettingsForEvidence(clean, false), { deinterlace: false, deband: false, denoise: false, sharpen: false });
+  const comb = { combPixels: 600, distinctLumaLevels: 200, neighborDiff: 1.0 };
   const c = previewSettingsForEvidence(comb);
   assert.ok(c.deinterlace, 'high comb → deinterlace');
   assert.ok(c.denoise, 'interlaced preview also denoise');
@@ -166,7 +169,7 @@ console.log('receipt self-check passed');
 // Loop convergence: a preview that improves each round converges.
 {
   const sequence = [
-    { combPixels: 80, distinctLumaLevels: 200, neighborDiff: 1.0 },  // interlaced
+    { combPixels: 600, distinctLumaLevels: 200, neighborDiff: 1.0 },  // interlaced
     { combPixels: 10, distinctLumaLevels: 200, neighborDiff: 2.0 },  // clean-ish
   ];
   let i = 0;
@@ -181,13 +184,13 @@ console.log('receipt self-check passed');
 }
 // Loop stops early when no new fix fires (the fix has stabilized), not at maxRounds.
 {
-  const stuck = { combPixels: 80, distinctLumaLevels: 200, neighborDiff: 1.0 }; // always interlaced
+  const stuck = { combPixels: 600, distinctLumaLevels: 200, neighborDiff: 1.0 }; // always interlaced
   const result = await runPreviewLoop(
     { deinterlace: false, deband: false, denoise: false, sharpen: false },
     3,
     async () => stuck,
   );
-  // Round 1 applies deinterlace+denoise (changed); round 2 re-derives the same → no new fix → stop.
+  // Round 1 applies deinterlace (changed); round 2 re-derives the same → no new fix → stop.
   assert.equal(result.rounds.length, 2);
   assert.ok(!result.converged, 'never clean → report honestly');
   assert.ok(result.settings.deinterlace, 'fix still applied');

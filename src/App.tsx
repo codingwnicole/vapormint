@@ -7,6 +7,7 @@ import {
   applyLook,
   assertPublicVideoUrl,
   createClip,
+  defaultRecipe,
   deinterlaceChoices,
   formatTime,
   fitCropToAspect,
@@ -60,6 +61,8 @@ const welcomeSteps = [
 ] as const;
 
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+// Electron only forwards an IPC error's message ("Error invoking remote method …: AbortError: …"), never its name.
+const isAbort = (error: unknown) => /AbortError|operation was aborted/i.test(errorMessage(error));
 type SaveState = 'saving' | 'saved' | 'error';
 
 function useElapsed(startedAt?: number) {
@@ -258,25 +261,54 @@ export default function App() {
       if (sources.length) setView('find');
       setStatus(sources.length ? `${sources.length} source${sources.length === 1 ? '' : 's'} imported` : 'Watch folder enabled');
     } catch (error) {
-      if (!(error instanceof Error && error.name === 'AbortError')) reportError(error);
+      if (!(isAbort(error))) reportError(error);
       else setStatus('Import cancelled; original files were not changed.');
     } finally { setTaskStartedAt(undefined); setTaskKind(undefined); }
   };
 
-  const reanalyzeActiveSource = async () => {
-    if (!session || !activeSource || busy) return;
+  // Sources imported from the old Mac app (and failed probes) carry an empty 0×0 / 0s analysis.
+  const hasEmptyAnalysis = (source: StudioSource) => !source.missing && !(source.sourceAnalysis.width && source.sourceAnalysis.duration);
+  const emptySources = session?.sources.filter(hasEmptyAnalysis) ?? [];
+
+  const reanalyzeSources = async (targets: StudioSource[]) => {
+    if (!session || !targets.length || busy) return;
+    const projectId = session.id;
+    const failed: string[] = [];
+    let done = 0;
     setTaskKind('import');
     setTaskStartedAt(Date.now());
-    setTaskProgress({ percent: 0, message: 'Preparing distributed source analysis' });
     try {
-      const sourceAnalysis = await window.cuttingFloor.reanalyzeSource(activeSource.sourcePath);
-      setSession((current) => current?.id === session.id ? { ...current, sources: current.sources.map((source) => source.id === activeSource.id ? { ...source, sourceAnalysis } : source) } : current);
-      setStatus('Source guidance updated');
+      for (const [index, target] of targets.entries()) {
+        const label = targets.length > 1 ? `${target.episodeLabel} (${index + 1} of ${targets.length})` : target.episodeLabel;
+        setTaskProgress({ percent: 0, message: `Analyzing ${label}` });
+        try {
+          const sourceAnalysis = await window.cuttingFloor.reanalyzeSource(target.sourcePath);
+          done += 1;
+          // Saved per source, so stopping halfway keeps what already finished.
+          setSession((current) => current?.id === projectId ? { ...current, sources: current.sources.map((source) => source.id === target.id ? { ...source, sourceAnalysis } : source) } : current);
+        } catch (error) {
+          if (isAbort(error)) throw error;
+          failed.push(target.episodeLabel);
+        }
+      }
+      if (failed.length) reportError(`Analyzed ${done} of ${targets.length} sources. Could not read: ${failed.join(', ')}.`);
+      else setStatus(targets.length > 1 ? `${done} sources analyzed` : 'Source guidance updated');
     } catch (error) {
-      if (!(error instanceof Error && error.name === 'AbortError')) reportError(error);
-      else setStatus('Source analysis cancelled. Existing guidance was preserved.');
+      if (!(isAbort(error))) reportError(error);
+      else setStatus(`Source analysis stopped after ${done} of ${targets.length}. Finished sources were kept.`);
     } finally { setTaskStartedAt(undefined); setTaskKind(undefined); }
   };
+  const reanalyzeActiveSource = () => activeSource ? reanalyzeSources([activeSource]) : Promise.resolve();
+
+  // An empty analysis breaks the timeline, clip ranges and export sizes. Probe it once when opened.
+  // ponytail: once per source per app run, so a file ffprobe can't read doesn't retry forever.
+  const autoAnalyzed = useRef(new Set<string>());
+  useEffect(() => {
+    if (!activeSource || busy || !hasEmptyAnalysis(activeSource)) return;
+    if (autoAnalyzed.current.has(activeSource.id)) return;
+    autoAnalyzed.current.add(activeSource.id);
+    void reanalyzeActiveSource();
+  }, [activeSource?.id, activeSource?.missing, activeSource?.sourceAnalysis.width, activeSource?.sourceAnalysis.duration, busy]);
 
   const prepareDownload = (url: string) => {
     if (!preferences || busy) return false;
@@ -320,7 +352,7 @@ export default function App() {
       setView('find');
       setStatus(`${source.displayName} downloaded and imported`);
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') setStatus('Download cancelled; the new project remains available.');
+      if (isAbort(error)) setStatus('Download cancelled; the new project remains available.');
       else {
         const message = errorMessage(error);
         if (/browser sign-in|sign-in could not be read/i.test(message)) {
@@ -424,8 +456,15 @@ export default function App() {
     setNotice({ kind: 'info', message: 'Touching clips joined.' });
   };
 
+  // One place that records an export on its clip (single and batch). A clip whose recipe was
+  // edited mid-render keeps its new recipe and stays Ready.
+  const applyExportResult = (projectId: string, clipId: string, exportedRecipe: ClipRecipe, result: SessionClip) => setSession((current) => {
+    if (!current || current.id !== projectId) return current;
+    return { ...current, clips: current.clips.map((clip) => clip.id !== clipId ? clip : { ...clip, completed: JSON.stringify(clip.recipe) === JSON.stringify(exportedRecipe), outputPath: result.outputPath, processingEngine: result.processingEngine, fallbackReason: result.fallbackReason, pngFramesPath: result.pngFramesPath, receiptPath: result.receiptPath, outputWarnings: result.outputWarnings }) };
+  });
+
   const exportSelected = async () => {
-    if (!selectedClip || !preferences || !session || busy) return;
+    if (!selectedClip || !preferences || !session || busy || tuning) return;
     const source = session?.sources.find((item) => item.id === selectedClip.sourceId);
     if (!source) return setStatus('The source for this clip is unavailable.');
     const projectId = session.id;
@@ -439,13 +478,7 @@ export default function App() {
       if (completed) {
         const latestClip = sessionRef.current?.id === projectId ? sessionRef.current.clips.find((clip) => clip.id === clipId) : undefined;
         const recipeChanged = Boolean(latestClip && JSON.stringify(latestClip.recipe) !== JSON.stringify(exportedRecipe));
-        setSession((current) => {
-          if (!current || current.id !== projectId) return current;
-          return { ...current, clips: current.clips.map((clip) => {
-            if (clip.id !== clipId) return clip;
-            return { ...clip, completed: !recipeChanged, outputPath: completed.outputPath, processingEngine: completed.processingEngine, fallbackReason: completed.fallbackReason, pngFramesPath: completed.pngFramesPath, outputWarnings: completed.outputWarnings };
-          }) };
-        });
+        applyExportResult(projectId, clipId, exportedRecipe, completed);
         setExportRootOverride(undefined);
         const warning = completed.outputWarnings?.[0];
         setStatus(recipeChanged ? `Exported ${completed.name} with the previous recipe; current changes remain Ready.` : warning ?? `Exported ${completed.name}`);
@@ -455,7 +488,7 @@ export default function App() {
         if (next) setSelectedClipId(next.id);
       } else setStatus('Export cancelled');
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') setStatus('Export cancelled; incomplete output removed and completed work preserved.');
+      if (isAbort(error)) setStatus('Export cancelled; incomplete output removed and completed work preserved.');
       else reportError(error);
     } finally { setExportStartedAt(undefined); }
   };
@@ -464,12 +497,12 @@ export default function App() {
     if (!selectedClip || !preferences || !session || busy || tuning) return;
     const source = session?.sources.find((item) => item.id === selectedClip.sourceId);
     if (!source) return setStatus('The source for this clip is unavailable.');
-    const projectId = session.id;
+    const clipId = selectedClip.id;
+    const stop = window.cuttingFloor.onPreviewTuneProgress((prog) => setTuneStatus(prog.message));
     try {
       setTuning(true);
       setTuneStatus('Rendering first preview');
       setTuneResult(null);
-      const stop = window.cuttingFloor.onPreviewTuneProgress((prog) => setTuneStatus(prog.message));
       let round = 0;
       const renderAndAnalyze = async (settings: PreviewSettings) => {
         round += 1;
@@ -478,9 +511,9 @@ export default function App() {
       };
       const initialEvidence = { combPixels: source.sourceAnalysis.combPixels ?? 0, distinctLumaLevels: source.sourceAnalysis.distinctLumaLevels ?? 256, neighborDiff: source.sourceAnalysis.noise ?? 0 };
       const result = await runPreviewLoop(previewSettingsForEvidence(initialEvidence), 5, renderAndAnalyze);
-      stop();
       const patch = previewSettingsToRecipePatch(result.settings);
       updateRecipe(patch);
+      updateClip(clipId, { selfTuned: patch });
       // Update the source's pixel evidence so Source Guidance reflects what
       // self-tune actually measured on rendered preview pixels.
       const lastAnalysis = result.rounds.at(-1);
@@ -493,35 +526,41 @@ export default function App() {
       setTuneStatus(result.converged ? `Converged after ${result.rounds.length} round${result.rounds.length === 1 ? '' : 's'}` : `Stopped after ${result.rounds.length} rounds (no further improvement)`);
       setStatus(fixes.length ? `Self-tune applied: ${fixes.join(', ')}. Review the recipe, then export.` : 'Self-tune found no fix needed — the preview already measured clean.');
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') setTuneStatus('Self-tune cancelled');
+      if (isAbort(error)) setTuneStatus('Self-tune cancelled');
       else reportError(error);
-    } finally { setTuning(false); setTuneStatus(''); }
+    } finally { stop(); setTuning(false); setTuneStatus(''); }
   };
 
   const exportAll = async () => {
-    if (!session || !preferences || busy) return;
+    if (!session || !preferences || busy || tuning) return;
     const readyClips = session.clips.filter((clip) => !clip.completed);
     if (!readyClips.length) return;
     const projectId = session.id;
+    const failed: string[] = [];
     let done = 0;
+    setExportStartedAt(Date.now()); // marks the app busy: no tab switches, no second export cancelling this one
     try {
-      for (let i = 0; i < readyClips.length; i += 1) {
-        const clip = readyClips[i];
+      for (const clip of readyClips) {
         const source = session.sources.find((item) => item.id === clip.sourceId);
-        if (!source) continue;
+        if (!source) { failed.push(clip.name); continue; }
         setBatchProgress({ done, total: readyClips.length, message: `Rendering ${clip.name}` });
-        const result = await window.cuttingFloor.exportClip({ source, clip, projectName: session.name, exportRoot: exportRootOverride ?? session.exportPath ?? preferences.exportPath });
-        done += 1;
-        if (sessionRef.current?.id === projectId) {
-          setSession((current) => (current && current.id === projectId ? { ...current, clips: current.clips.map((c) => (c.id === clip.id ? { ...c, completed: true, outputPath: result.outputPath, processingEngine: result.processingEngine, fallbackReason: result.fallbackReason, receiptPath: result.receiptPath, outputWarnings: result.outputWarnings, pngFramesPath: result.pngFramesPath } : c)) } : current));
+        try {
+          const result = await window.cuttingFloor.exportClip({ source, clip, projectName: session.name, exportRoot: exportRootOverride ?? session.exportPath ?? preferences.exportPath });
+          done += 1;
+          applyExportResult(projectId, clip.id, clip.recipe, result);
+        } catch (error) {
+          if (isAbort(error)) throw error;
+          failed.push(clip.name); // one bad clip must not stop the rest of the queue
         }
       }
-      setStatus(`Batch export finished — ${done} of ${readyClips.length} clips rendered.`);
+      if (failed.length) reportError(`Batch export finished — ${done} of ${readyClips.length} rendered. Failed: ${failed.join(', ')}. Open each one in Process clips to see why.`);
+      else setStatus(`Batch export finished — ${done} of ${readyClips.length} clips rendered.`);
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') setStatus(`Batch export stopped — ${done} of ${readyClips.length} clips completed.`);
+      if (isAbort(error)) setStatus(`Batch export stopped — ${done} of ${readyClips.length} clips completed.`);
       else reportError(error);
     } finally {
       setBatchProgress(null);
+      setExportStartedAt(undefined);
     }
   };
 
@@ -592,7 +631,7 @@ export default function App() {
       <button className="menu-button" onClick={() => setProjectDialog({ mode: 'create', name: 'Untitled Vapormint' })}>+ Menu</button>
     </header>
 
-    {updateInfo && !updateDismissed && (updateInfo.status === 'available' || updateInfo.status === 'error') && <div className={`update-banner${updateInfo.status === 'error' ? ' update-banner-error' : ''}`} role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">{updateInfo.status === 'error' ? '!' : '✦'}</span><div className="update-banner-copy"><b>{updateInfo.status === 'error' ? 'Update check failed' : `Version ${updateInfo.version} is available`}</b><small>{updateInfo.status === 'error' ? updateInfo.message : 'A new release of Vapormint is out — grab it from the release page.'}</small></div>{updateInfo.status === 'error' ? <button className="update-banner-retry" onClick={() => { setUpdateDismissed(false); setUpdateInfo(undefined); void window.cuttingFloor.checkForUpdates(); }}>Retry</button> : <button className="update-banner-cta" onClick={() => void window.cuttingFloor.applyUpdate()}>Get update</button>}<button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
+    {updateInfo && !updateDismissed && updateInfo.status !== 'current' && <div className={`update-banner${updateInfo.status === 'error' ? ' update-banner-error' : ''}`} role="status" aria-live="polite"><span className="update-banner-mark" aria-hidden="true">{updateInfo.status === 'error' ? '!' : '✦'}</span><div className="update-banner-copy"><b>{updateInfo.status === 'error' ? 'Update problem' : updateInfo.status === 'available' ? `Version ${updateInfo.version} is available` : updateInfo.status === 'downloading' ? `Updating to ${updateInfo.version}` : `Version ${updateInfo.version} is ready`}</b><small>{updateInfo.status === 'available' ? 'A new release of Vapormint is out.' : updateInfo.message}</small></div>{updateInfo.status === 'error' ? <button className="update-banner-retry" onClick={() => { setUpdateDismissed(false); setUpdateInfo(undefined); void window.cuttingFloor.checkForUpdates(); }}>Retry</button> : updateInfo.status === 'available' ? <button className="update-banner-cta" onClick={() => void window.cuttingFloor.applyUpdate()}>Install update</button> : null}<button className="update-banner-dismiss" aria-label="Dismiss update notice" title="Dismiss until the next launch" onClick={() => setUpdateDismissed(true)}>×</button></div>}
 
     <aside className="sidebar" aria-hidden={modalOpen} inert={modalOpen ? true : undefined}>
       <img className="rail-logo" src={appIcon} alt="Vapormint" />
@@ -610,6 +649,7 @@ export default function App() {
         onToggleMute={() => setMuted((value) => !value)} onFilter={setQueueFilter} onJoin={joinRanges} onResetCompleted={resetCompleted} onClearUnfinished={clearUnfinished} onMarkUnfinished={markUnfinished} onExportAll={exportAll} exportingCount={batchProgress?.total ?? 0} batchProgress={batchProgress}
         onToggleReviewed={() => setSession({ ...session, sources: session.sources.map((source) => source.id === activeSource?.id ? { ...source, finished: !source.finished } : source) })}
         onReanalyze={() => void reanalyzeActiveSource()}
+        emptySourceCount={emptySources.length} busy={busy} onReanalyzeEmpty={() => void reanalyzeSources(emptySources)}
         onToggleQueue={() => setQueueCollapsed((value) => !value)} onSelectSource={(id) => setSession({ ...session, activeSourceId: id })}
         onRemove={removeClip} onSelectClip={(id) => { setSelectedClipId(id); setView('process'); }}
       />}
@@ -781,6 +821,9 @@ interface FindProps {
   batchProgress: { done: number; total: number; message: string } | null;
   onToggleReviewed(): void;
   onReanalyze(): void;
+  emptySourceCount: number;
+  busy: boolean;
+  onReanalyzeEmpty(): void;
   onToggleQueue(): void;
   onSelectSource(id: string): void;
   onRemove(id: string): void;
@@ -799,6 +842,7 @@ function FindMoments(props: FindProps) {
       <h1 className="find-heading">Find moments<span className="accent-dot">.</span></h1>
       <div className="source-strip-info"><select value={activeSource.id} onChange={(event) => props.onSelectSource(event.target.value)}>{session.sources.map((source) => <option key={source.id} value={source.id}>{source.episodeLabel}</option>)}</select><span className="source-meta">{activeSource.sourceAnalysis.width}&times;{activeSource.sourceAnalysis.height} / {activeSource.sourceAnalysis.fps.toFixed(0)} fps{activeSource.sourceAnalysis.hdr !== 'Unknown' ? ` / ${activeSource.sourceAnalysis.hdr}` : ''}</span></div>
       <details className="analysis-popover"><summary title="Technical source clues and conservative processing recommendations.">Analysis</summary><b>{activeSource.sourceAnalysis.qualitySummary}</b><span>{activeSource.sourceAnalysis.codec} &middot; {activeSource.sourceAnalysis.format} &middot; {activeSource.sourceAnalysis.pixelFormat} &middot; {activeSource.sourceAnalysis.bitDepth}-bit &middot; {activeSource.sourceAnalysis.bitrate ? `${(activeSource.sourceAnalysis.bitrate / 1_000_000).toFixed(1)} Mbps` : 'bitrate unknown'}</span>{sourceGuidanceItems(activeSource.sourceAnalysis).map((item) => <p key={item.title}>{item.confidence} confidence — {item.title}: {item.recommendation} Evidence: {item.evidence} Check: {item.check}</p>)}<InfoTip>Resolution, bitrate, bit depth, HDR, interlacing, variable frame rate, and freezes are technical clues&mdash;not a promise that every frame will look good.</InfoTip><button className="ghost" onClick={props.onReanalyze}>Reanalyze distributed samples</button></details>
+      {props.emptySourceCount > 1 && <button className="ghost" disabled={props.busy} title={props.busy ? 'Wait for the current task to finish.' : 'These sources have no size or duration on record (usually imported from the old Mac app). Analyzes them one after another; Stop keeps the ones already finished.'} onClick={props.onReanalyzeEmpty}>Analyze {props.emptySourceCount} empty sources</button>}
       <button className="ghost" onClick={props.onToggleReviewed}>{activeSource.finished ? '✓ Reviewed' : 'Mark reviewed'}</button>
       <button className="ghost" onClick={props.onImport}>+ Add source</button>
     </div>
@@ -827,7 +871,7 @@ function FindMoments(props: FindProps) {
         <button title="Hide the queue to give the player more room." className="queue-head" onClick={props.onToggleQueue} aria-expanded={!queueCollapsed}><span><h2 className="selects-title">The selects<span className="accent-dot">.</span></h2><small>({session.clips.length})</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>
         {!queueCollapsed && <><div className="queue-filter-tabs" role="tablist">{(['all', 'ready', 'completed'] as const).map((tab) => <button key={tab} role="tab" aria-selected={queueFilter === tab} onClick={() => props.onFilter(tab)}>{tab === 'all' ? 'All' : tab === 'ready' ? 'Ready' : 'Exported'}</button>)}</div>
         <div className="queue-body"><div className="queue-tools"><button title="Merge overlapping or frame-adjacent ranges from the same source." onClick={props.onJoin}>Join touching</button><button title="Return every completed clip to Ready without deleting exports from disk." onClick={props.onResetCompleted}>Reset completed</button><button title="Remove all unfinished clips from this project." onClick={props.onClearUnfinished}>Clear ready</button></div>
-        {props.batchProgress && <div className="batch-progress" aria-live="polite"><div className="progress-copy"><span>BATCH EXPORT</span><b>{props.batchProgress.message}</b><small>{props.batchProgress.done} of {props.batchProgress.total} clips</small></div><div className="progress-track" role="progressbar" aria-label="Batch export progress" aria-valuemin={0} aria-valuemax={props.batchProgress.total} aria-valuenow={props.batchProgress.done}><i style={{ width: `${props.batchProgress.total ? Math.round((props.batchProgress.done / props.batchProgress.total) * 100) : 0}%` }} /></div></div>}
+        {props.batchProgress && <div className="batch-progress" aria-live="polite"><div className="progress-copy"><span>BATCH EXPORT</span><b>{props.batchProgress.message}</b><small>{props.batchProgress.done} of {props.batchProgress.total} clips</small></div><div className="progress-track" role="progressbar" aria-label="Batch export progress" aria-valuemin={0} aria-valuemax={props.batchProgress.total} aria-valuenow={props.batchProgress.done}><i style={{ width: `${props.batchProgress.total ? Math.round((props.batchProgress.done / props.batchProgress.total) * 100) : 0}%` }} /></div><button className="ghost" onClick={() => void window.cuttingFloor.cancelTask()}>Stop safely</button></div>}
         {session.clips.filter((clip) => queueFilter === 'all' || (queueFilter === 'ready' ? !clip.completed : clip.completed)).map((clip, index) => <div className={`queue-item ${clip.completed ? 'complete' : ''}`} key={clip.id}>
           <button className="queue-open" onClick={() => props.onSelectClip(clip.id)}><span>{String(index + 1).padStart(2, '0')}</span><div><b>{clip.name}</b><small>{formatTime(clip.start)} — {formatTime(clip.end)}</small></div></button>
           {clip.completed && <button title="Return this clip to Ready without deleting its previous export from disk." className="queue-state" aria-label={`Mark ${clip.name} unfinished`} onClick={() => props.onMarkUnfinished(clip.id)}>↺</button>}
@@ -928,7 +972,9 @@ function ProcessClips(props: ProcessProps) {
   // anything. Guarded so it fires once per clip and never while busy/tuning.
   const autoTunedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!props.clip || props.clip.completed || props.clip.preserveImportedRecipe) return;
+    // Only an untouched clip auto-tunes: once tuned or hand-edited its recipe is no longer the default,
+    // so leaving and re-entering this page never overwrites the user's settings.
+    if (!props.clip || props.clip.completed || props.clip.preserveImportedRecipe || JSON.stringify(props.clip.recipe) !== JSON.stringify(defaultRecipe())) return;
     if (autoTunedRef.current.has(props.clip.id)) return;
     autoTunedRef.current.add(props.clip.id);
     if (props.busy || props.tuning) return;
@@ -965,6 +1011,8 @@ function ProcessClips(props: ProcessProps) {
   const elapsed = `${Math.floor(props.exportElapsed / 60)}:${String(props.exportElapsed % 60).padStart(2, '0')}`;
   const slowWarning = dimensions.width >= 3840 && recipe.denoise === 'Fine detail';
   const manual = (patch: Partial<ClipRecipe>) => props.onRecipe({ ...patch, look: 'Custom' });
+  // Marked while the value is still what self-tune turned on; editing it clears the mark.
+  const tuned = (key: keyof ClipRecipe) => { const value = clip.selfTuned?.[key]; return value !== undefined && value !== 'Off' && value !== false && recipe[key] === value; };
   const togglePreview = () => {
     if (!previewVideo.current) return;
     if (previewVideo.current.paused) {
@@ -990,7 +1038,7 @@ function ProcessClips(props: ProcessProps) {
   const completedCount = props.session.clips.filter((c) => c.completed).length;
   const totalCount = props.session.clips.length;
   return <section className={`process-page ${queueCollapsed ? 'queue-collapsed' : ''}`}>
-    <div className="process-header"><h1 className="process-heading">Process clips<span className="accent-dot">.</span></h1><span className="process-clip-label">{clip.name}</span><span className="process-progress-label">{completedCount}/{totalCount} exported</span><button className="primary process-header-export" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export →'}</button></div>
+    <div className="process-header"><h1 className="process-heading">Process clips<span className="accent-dot">.</span></h1><span className="process-clip-label">{clip.name}</span><span className="process-progress-label">{completedCount}/{totalCount} exported</span><button className="primary process-header-export" disabled={props.exporting || props.tuning} onClick={props.onExport}>{props.exporting ? 'Exporting…' : props.tuning ? 'Self-tuning…' : 'Export →'}</button></div>
     <div className="recipe-panel">
       <div className="recipe-title"><div><span className="eyebrow">ACTIVE RECIPE</span></div>{props.exporting ? <div className="process-export-strip" aria-live="polite"><div><b>{clipProgress?.message ?? 'Preparing export'}</b><small>{Math.round(clipProgress?.percent ?? 0)}% · {elapsed} elapsed</small><span><i style={{ width: `${clipProgress?.percent ?? 0}%` }} /></span></div><button className="ghost" onClick={props.onCancel}>Stop safely</button></div> : <div className="reorder"><button aria-label="Move clip earlier" onClick={() => props.onMove(clip.id, -1)}>↑</button><button aria-label="Move clip later" onClick={() => props.onMove(clip.id, 1)}>↓</button><button onClick={() => props.onRemove(clip.id)}>Remove</button></div>}</div>
       <div className="crop-editor">
@@ -1016,7 +1064,7 @@ function ProcessClips(props: ProcessProps) {
       <div className="analysis-guide"><div className="guidance-copy"><span>SOURCE GUIDANCE</span><b>{sourceVerdict(analysis)}</b>{honestNotes.length > 0 && <ul className="honest-notes" aria-label="What the decoded pixels actually show">{honestNotes.map((note) => <li key={note}>{note}</li>)}</ul>}<div className="guidance-signals"><i title="Video codec: how the footage is compressed">{analysis.codec === 'av1' ? 'AV1 (efficient)' : analysis.codec === 'h265' ? 'HEVC / H.265' : analysis.codec === 'h264' ? 'H.264 / AVC' : analysis.codec.toUpperCase()}</i><i title="Color sampling and bit depth">{analysis.pixelFormat === 'yuv420p' ? 'Standard 8-bit color' : analysis.pixelFormat === 'yuv444p' ? 'Full 8-bit color (richer)' : `${analysis.pixelFormat} · ${analysis.bitDepth}-bit`}</i>{analysis.scanEvidence && <i title="How confident the scan is that the footage is progressive or interlaced">{analysis.scanEvidence.classification === 'Progressive' ? '✓ Progressive (normal)' : analysis.scanEvidence.classification === 'Interlaced' ? '⚠ Interlaced detected' : '⚠ Cadence needs review'}</i>}{analysis.hdr !== 'Unknown' && <i title="Color space">{analysis.hdr === 'SDR' ? '✓ Standard color' : analysis.hdr}</i>}<i title="Frame timing">{analysis.frameTiming?.kind ?? 'Timing not checked'}</i>{Boolean(analysis.bitrate) && <i title="Container-level bitrate">{Math.round(analysis.bitrate / 1000)} kbps</i>}</div><details open><summary>⚙ Tune the recipe</summary><div className="checklist-guide"><p><b>Review this recipe</b> and play the clip (Space). Adjust any setting that doesn't look right:</p><ul>{guidanceItems.map((item) => <li key={`check-${item.title}`}><b>{item.title}</b> — {item.check}</li>)}</ul><small>Every setting below (Motion, Detail, Output, Finishing) has a hover explanation. Start with what self-tune applied, then fine-tune by eye.</small></div></details><details className="evidence-span"><summary>📊 Video stats</summary><div className="guidance-cards">{guidanceItems.map((item) => <article key={`${item.title}-${item.evidence}`}><header><b>{item.title}</b><i className={`confidence-${item.confidence.toLowerCase()}`}>{item.confidence}</i></header><p>{item.recommendation}</p></article>)}</div></details><small>Self-tune measures the preview and can adjust deinterlace, denoise, deband, and sharpen. Imported and completed clips retain their saved recipe until you choose to re-tune.</small></div><div className="analysis-actions">{recipes.length > 1 && (<div className="recipe-alternatives"><label className="recipe-alternatives-label"><span>RECIPE ALTERNATIVES</span><select value={Math.min(recipeIndex, recipes.length - 1)} onChange={(event) => setRecipeIndex(Number(event.target.value))}>{recipes.map((alt, index) => <option key={alt.name} value={index}>{alt.name} · {alt.confidence}</option>)}</select></label><p className="recipe-alternatives-why">{recipes[Math.min(recipeIndex, recipes.length - 1)]?.why ?? ''}</p><button className="ghost" onClick={() => { const alt = recipes[Math.min(recipeIndex, recipes.length - 1)]; if (alt) props.onRecipe(alt.patch); }}>Apply selected</button></div>)}<button className="ghost" disabled={!unfinishedOtherCount} onClick={props.onApplyRecipeToOtherClips}>Apply to {unfinishedOtherCount} unfinished clip{unfinishedOtherCount === 1 ? '' : 's'}</button></div></div>
       <div className="recipe-settings-grid">
         <details className="recipe-section" open><summary className="recipe-section-head"><div><span>MOTION</span><h3>Cadence and playback</h3></div><p>Preserve original motion unless the source visibly needs intervention.</p></summary><div className="recipe-section-fields two-column">
-          <Field label="DEINTERLACE / CADENCE"><select title="How the source was scanned. “Off” for normal progressive footage. Bwdif/QTGMC for interlaced (TV-style) sources that show tearing or ghosting on moving edges." value={recipe.deinterlace} onChange={(event) => props.onRecipe({ deinterlace: event.target.value as ClipRecipe['deinterlace'] })}>{deinterlaceChoices.map((value) => <option key={value} value={value}>{value === 'Bwdif' ? 'Bwdif · same-rate' : value === 'Bwdif 2×' ? 'Bwdif · double-rate' : value === 'QTGMC Quality' ? 'QTGMC · maximum quality' : value}</option>)}</select></Field>
+          <Field label="DEINTERLACE / CADENCE" tuned={tuned('deinterlace')}><select title="How the source was scanned. “Off” for normal progressive footage. Bwdif/QTGMC for interlaced (TV-style) sources that show tearing or ghosting on moving edges." value={recipe.deinterlace} onChange={(event) => props.onRecipe({ deinterlace: event.target.value as ClipRecipe['deinterlace'] })}>{deinterlaceChoices.map((value) => <option key={value} value={value}>{value === 'Bwdif' ? 'Bwdif · same-rate' : value === 'Bwdif 2×' ? 'Bwdif · double-rate' : value === 'QTGMC Quality' ? 'QTGMC · maximum quality' : value}</option>)}</select></Field>
           <Field label="MOTION"><select title="Output frame rate. “Original” keeps the source rate. 30/60 fps upsamples for smoother motion on high-refresh displays." value={recipe.motion} onChange={(event) => props.onRecipe({ motion: event.target.value as ClipRecipe['motion'] })}>{['Original', '30 fps', '60 fps'].map((value) => <option key={value}>{value}</option>)}</select></Field>
           {props.expertMode && <Field label="FIELD ORDER"><select title="Which field comes first in interlaced footage. “Auto” guesses from the container. Wrong order causes jitter on moving edges." value={recipe.fieldOrder} onChange={(event) => props.onRecipe({ fieldOrder: event.target.value as ClipRecipe['fieldOrder'] })}>{['Auto', 'Top first', 'Bottom first'].map((value) => <option key={value}>{value}</option>)}</select></Field>}
           {props.expertMode && <Field label="ROTATION"><select title="Rotates the output. Only needed if the source is stored sideways (common with phone footage)." value={recipe.rotation} onChange={(event) => props.onRecipe({ rotation: Number(event.target.value) as ClipRecipe['rotation'] })}>{[0, 90, 180, 270].map((value) => <option key={value} value={value}>{value}°</option>)}</select></Field>}
@@ -1024,9 +1072,9 @@ function ProcessClips(props: ProcessProps) {
         <details className="recipe-section" open><summary className="recipe-section-head"><div><span>DETAIL</span><h3>Clean and sharpen</h3></div><p>Start with a look, then adjust only what the shot needs.</p></summary><div className="recipe-section-fields two-column">
           <Field label="STARTING LOOK"><select title="A preset bundle of denoise + sharpen + deband settings. “Preserve” is the most faithful; “Crisp” adds sharpening; “Soft / noisy” adds cleanup." value={recipe.look} onChange={(event) => props.onLook(event.target.value as StudioLook)}>{looks.map((value) => <option key={value}>{value}</option>)}</select></Field>
           <Field label="RESTORATION"><select title="Debilinear/Debicubic attempts to reverse a prior bilinear/bicubic upscale (e.g. 480p stretched to 1080p). Keep Off unless you know the source was upscaled." value={recipe.restoration} onChange={(event) => manual({ restoration: event.target.value as ClipRecipe['restoration'] })}>{['Off', 'Debilinear', 'Debicubic'].map((value) => <option key={value}>{value}</option>)}</select></Field>
-          <Field label="DENOISE METHOD"><select title="“Off” preserves original grain. “Balanced” is fast BM3D. “Fine detail” is slower but better at preserving texture while removing noise." value={recipe.denoise} onChange={(event) => manual({ denoise: event.target.value as ClipRecipe['denoise'] })}>{['Off', 'Balanced', 'Fine detail'].map((value) => <option key={value}>{value}</option>)}</select></Field>
+          <Field label="DENOISE METHOD" tuned={tuned('denoise')}><select title="“Off” preserves original grain. “Balanced” is fast BM3D. “Fine detail” is slower but better at preserving texture while removing noise." value={recipe.denoise} onChange={(event) => manual({ denoise: event.target.value as ClipRecipe['denoise'] })}>{['Off', 'Balanced', 'Fine detail'].map((value) => <option key={value}>{value}</option>)}</select></Field>
           <Field label={`DENOISE STRENGTH · ${recipe.denoiseStrength.toFixed(2)}`}><input title="0 = off. 0.5–1.0 = gentle cleanup. 1.2–2.0 = targets visible noise. Above 2 can smear fine detail." type="range" min="0" max="3" step="0.05" value={recipe.denoiseStrength} onChange={(event) => manual({ denoiseStrength: Number(event.target.value) })} /></Field>
-          <Field label="SHARPEN METHOD"><select title="“Off” = no sharpening. “Natural lines” is a gentle unsharp mask. “Adaptive crisp” is stronger and better on edges but can halos on difficult footage." value={recipe.sharpen} onChange={(event) => manual({ sharpen: event.target.value as ClipRecipe['sharpen'] })}>{['Off', 'Natural', 'Adaptive'].map((value) => <option key={value}>{value === 'Natural' ? 'Natural lines' : value === 'Adaptive' ? 'Adaptive crisp' : value}</option>)}</select></Field>
+          <Field label="SHARPEN METHOD" tuned={tuned('sharpen')}><select title="“Off” = no sharpening. “Natural lines” is a gentle unsharp mask. “Adaptive crisp” is stronger and better on edges but can halos on difficult footage." value={recipe.sharpen} onChange={(event) => manual({ sharpen: event.target.value as ClipRecipe['sharpen'] })}>{['Off', 'Natural', 'Adaptive'].map((value) => <option key={value}>{value === 'Natural' ? 'Natural lines' : value === 'Adaptive' ? 'Adaptive crisp' : value}</option>)}</select></Field>
           <Field label={`SHARPEN STRENGTH · ${recipe.sharpenStrength.toFixed(2)}`}><input title="0.3–0.6 = subtle. 0.7–1.0 = visibly crisp, may show halos. Watch faces and fine textures." type="range" min="0" max="1" step="0.05" value={recipe.sharpenStrength} onChange={(event) => manual({ sharpenStrength: Number(event.target.value) })} /></Field>
         </div></details>
         <details className="recipe-section" open><summary className="recipe-section-head"><div><span>OUTPUT</span><h3>Master file</h3></div><p>Choose the delivered format and actual exported pixel size.</p></summary><div className="recipe-section-fields">
@@ -1036,8 +1084,8 @@ function ProcessClips(props: ProcessProps) {
         </div></details>
         <details className="recipe-section" open><summary className="recipe-section-head"><div><span>FINISHING</span><h3>Color and extras</h3></div><p>Optional finishing operations and inspectable pipeline output.</p></summary><div className="recipe-section-fields two-column">
           {props.expertMode && <Field label="COLOR MANAGEMENT"><select title="“Auto” handles HDR-to-SDR and Rec.601-to-709 automatically. “Preserve” keeps the source color space as-is. Only change if the output looks wrong." value={recipe.colorManagement} onChange={(event) => props.onRecipe({ colorManagement: event.target.value as ClipRecipe['colorManagement'] })}>{['Auto', 'SDR Rec.709', 'Convert 601 to 709', 'HDR PQ to SDR', 'HDR HLG to SDR', 'Preserve'].map((value) => <option key={value}>{value}</option>)}</select></Field>}
-          {props.expertMode && <Field label="ENGINE POLICY"><select title="Strict = only VapourSynth (full quality). Allow FFmpeg = falls back if VapourSynth fails (slightly different output)." onChange={(event) => props.onRecipe({ fallbackMode: event.target.value as ClipRecipe['fallbackMode'] })}><option>Strict VapourSynth</option><option>Allow FFmpeg fallback</option></select></Field>}
-        </div><div className="toggle-row">{([['deband', 'DEBAND GRADIENTS', 'Adds gentle dithering to smooth out banding (visible steps) in gradients like skies and shadows.'], ['reverse', 'REVERSE VIDEO + AUDIO', 'Plays the clip backwards, video and audio together.'], ['fade', 'SHORT FADE', 'Adds a brief fade-in at the start and fade-out at the end.'], ['extractFrames', 'EXTRACT PROCESSED PNGS', 'Saves individual PNG frames from the processed export, useful for frame-by-frame inspection.'], ['saveVapourSynthScript', 'SAVE .VPY', 'Saves the VapourSynth script that was used, so the exact pipeline can be reproduced or edited manually.']] as const).map(([key, label, tip]) => <label key={key} title={tip}><input type="checkbox" checked={recipe[key]} onChange={(event) => key === 'deband' ? manual({ deband: event.target.checked }) : props.onRecipe({ [key]: event.target.checked })} />{label}</label>)}</div>
+          {props.expertMode && <Field label="ENGINE POLICY"><select title="Strict = only VapourSynth (full quality). Allow FFmpeg = falls back if VapourSynth fails (slightly different output)." value={recipe.fallbackMode} onChange={(event) => props.onRecipe({ fallbackMode: event.target.value as ClipRecipe['fallbackMode'] })}><option>Strict VapourSynth</option><option>Allow FFmpeg fallback</option></select></Field>}
+        </div><div className="toggle-row">{([['deband', 'DEBAND GRADIENTS', 'Adds gentle dithering to smooth out banding (visible steps) in gradients like skies and shadows.'], ['reverse', 'REVERSE VIDEO + AUDIO', 'Plays the clip backwards, video and audio together.'], ['fade', 'SHORT FADE', 'Adds a brief fade-in at the start and fade-out at the end.'], ['extractFrames', 'EXTRACT PROCESSED PNGS', 'Saves individual PNG frames from the processed export, useful for frame-by-frame inspection.'], ['saveVapourSynthScript', 'SAVE .VPY', 'Saves the VapourSynth script that was used, so the exact pipeline can be reproduced or edited manually.']] as const).map(([key, label, tip]) => <label key={key} title={tip}><input type="checkbox" checked={recipe[key]} onChange={(event) => key === 'deband' ? manual({ deband: event.target.checked }) : props.onRecipe({ [key]: event.target.checked })} />{label}{key === 'deband' && tuned('deband') && <TunedMark />}</label>)}</div>
           {recipe.extractFrames && <div className="frame-options"><Field label="PNG EXTRACTION"><select value={recipe.frameExtraction} onChange={(event) => props.onRecipe({ frameExtraction: event.target.value as ClipRecipe['frameExtraction'] })}><option>Every processed frame</option><option>Custom frame rate</option></select></Field>{recipe.frameExtraction === 'Custom frame rate' && <NumberInput label="PNG FPS" value={recipe.frameFps} onChange={(value) => props.onRecipe({ frameFps: Math.max(0.01, value) })} />}</div>}
         </details>
       </div>
@@ -1049,11 +1097,11 @@ function ProcessClips(props: ProcessProps) {
       </fieldset>
       <div className="export-location"><div title={`${props.exportRoot}\\${props.session.name}`}><span>EXPORT LOCATION</span><b>{props.exportRoot}\{props.session.name}</b></div><button title="Choose a destination for this export only. The Settings default will not change." className="ghost" disabled={props.exporting} onClick={props.onChooseExportFolder}>Choose folder</button></div>
       {(clipProgress || props.exporting) && <div className={`export-progress ${props.exporting ? 'active' : ''}`} aria-busy={props.exporting} aria-live="polite"><div className="progress-copy"><span>EXPORT PROGRESS</span><b>{clipProgress?.message ?? 'Preparing export'}</b><small>{props.exporting ? `Active · ${elapsed} elapsed` : clipProgress?.percent === 100 ? `Completed in ${elapsed}` : 'Stopped'}</small></div><strong>{Math.round(clipProgress?.percent ?? 0)}%</strong><div className="progress-track" role="progressbar" aria-label="Clip export progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(clipProgress?.percent ?? 0)}><i style={{ width: `${clipProgress?.percent ?? 0}%` }} /></div></div>}
-      <div className="export-row"><div><span className={`status-dot ${props.exporting ? 'working' : ''}`} />{props.status}</div>{props.exporting && <button className="ghost" onClick={props.onCancel}>Stop safely</button>}{clip.completed && clip.receiptPath && <button className="ghost" disabled={receiptLoading} title="Open the render receipt — the auditable record of this export." onClick={() => openReceipt(clip.receiptPath as string)}>{receiptLoading ? 'Loading…' : 'Receipt'}</button>}<button className="primary" disabled={props.exporting} onClick={props.onExport}>{props.exporting ? 'Exporting…' : 'Export clip →'}</button></div>
+      <div className="export-row"><div><span className={`status-dot ${props.exporting ? 'working' : ''}`} />{props.status}</div>{props.exporting && <button className="ghost" onClick={props.onCancel}>Stop safely</button>}{clip.completed && clip.receiptPath && <button className="ghost" disabled={receiptLoading} title="Open the render receipt — the auditable record of this export." onClick={() => openReceipt(clip.receiptPath as string)}>{receiptLoading ? 'Loading…' : 'Receipt'}</button>}<button className="primary" disabled={props.exporting || props.tuning} title={props.tuning ? 'Self-tune is still adjusting this recipe.' : undefined} onClick={props.onExport}>{props.exporting ? 'Exporting…' : props.tuning ? 'Self-tuning…' : 'Export clip →'}</button></div>
       </div>
     </div>
     <aside className={`process-list ${queueCollapsed ? 'collapsed' : ''}`}><button className="process-queue-head" title={queueCollapsed ? 'Show project clips' : 'Hide project clips'} onClick={() => setQueueCollapsed((value) => !value)}><span><b>PROJECT CLIPS</b><small>{props.session.clips.length} clips · {completedCount} exported</small></span><i>{queueCollapsed ? '‹' : '›'}</i></button>{!queueCollapsed && <><div className="process-filter-tabs" role="tablist">{(['all', 'ready', 'exported'] as const).map((tab) => <button key={tab} role="tab" aria-selected={processFilter === tab} onClick={() => setProcessFilter(tab)}>{tab === 'all' ? `All (${totalCount})` : tab === 'ready' ? `Ready (${totalCount - completedCount})` : `Exported (${completedCount})`}</button>)}</div>
-      <div className="process-clip-list">{props.session.clips.filter((item) => processFilter === 'all' || (processFilter === 'ready' ? !item.completed : item.completed)).map((item, index) => { const src = props.session.sources.find((s) => s.id === item.sourceId); return <button disabled={props.exporting} key={item.id} className={`process-clip-item ${item.id === clip.id ? 'active' : ''} ${item.completed ? 'complete' : ''}`} onClick={() => props.onSelect(item.id)}>{src?.thumbnailUrl ? <img src={src.thumbnailUrl} alt="" /> : <span className="clip-thumb-empty">▶</span>}<div><b>{item.name}</b><small>{formatTime(item.start)} — {formatTime(item.end)}</small><small className="clip-status">{item.completed ? '✓ EXPORTED' : 'READY'}</small></div></button>; })}</div>
+      <div className="process-clip-list">{props.session.clips.filter((item) => processFilter === 'all' || (processFilter === 'ready' ? !item.completed : item.completed)).map((item, index) => { const src = props.session.sources.find((s) => s.id === item.sourceId); return <button disabled={props.exporting} key={item.id} className={`process-clip-item ${item.id === clip.id ? 'active' : ''} ${item.completed ? 'complete' : ''}`} onClick={() => props.onSelect(item.id)}>{item.thumbnailUrl ? <img src={item.thumbnailUrl} alt="" /> : src?.thumbnailUrl ? <img src={src.thumbnailUrl} alt="" /> : <span className="clip-thumb-empty">▶</span>}<div><b>{item.name}</b><small>{formatTime(item.start)} — {formatTime(item.end)}</small><small className="clip-status">{item.completed ? '✓ EXPORTED' : 'READY'}</small></div></button>; })}</div>
       {completedCount > 0 && <button className="process-reset-all ghost" title="Return every exported clip to Ready without deleting exports from disk." disabled={props.exporting} onClick={props.onResetAll}>Reset all to ready</button>}
       </>}</aside>
     {receipt && <ReceiptModal receipt={receipt} onClose={() => setReceipt(null)} />}
@@ -1176,8 +1224,12 @@ function NumberInput({ label, value, onChange }: { label: string; value: number 
   return <label className="number-input"><span>{label}</span><input type="number" min="1" value={value} onChange={(event) => onChange(Number(event.target.value))} /></label>;
 }
 
-function Field({ label, children }: React.PropsWithChildren<{ label: string }>) {
-  return <label className="field"><span>{label}</span>{children}</label>;
+function Field({ label, tuned, children }: React.PropsWithChildren<{ label: string; tuned?: boolean }>) {
+  return <label className="field"><span>{label}{tuned && <TunedMark />}</span>{children}</label>;
+}
+
+function TunedMark() {
+  return <em className="tuned-mark" title="Self-tune turned this on from the measured preview pixels. Change it and this mark goes away.">✦ self-tune applied this</em>;
 }
 
 function InfoTip({ children }: React.PropsWithChildren) {

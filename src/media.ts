@@ -519,9 +519,12 @@ export function compileVapourSynthScript(request: ExportRequest) {
 }
 
 function codecArguments(recipe: ClipRecipe) {
-  if (recipe.outputFormat === 'MP4') return ['-c:v', 'libx264', '-preset', 'medium', '-crf', '12', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart'];
-  if (recipe.outputFormat === 'ProRes 4444') return ['-c:v', 'prores_ks', '-profile:v', '4', '-pix_fmt', 'yuv444p10le', '-c:a', 'pcm_s16le'];
-  return ['-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le', '-c:a', 'pcm_s16le'];
+  // Clips never carry the source's chapters (MKV chapters became a QuickTime text track) or
+  // surround audio: Photoshop masters get plain stereo.
+  const clean = ['-map_chapters', '-1', '-ac', '2'];
+  if (recipe.outputFormat === 'MP4') return [...clean, '-c:v', 'libx264', '-preset', 'medium', '-crf', '12', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '256k', '-movflags', '+faststart'];
+  if (recipe.outputFormat === 'ProRes 4444') return [...clean, '-c:v', 'prores_ks', '-profile:v', '4', '-pix_fmt', 'yuv444p10le', '-c:a', 'pcm_s16le'];
+  return [...clean, '-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le', '-c:a', 'pcm_s16le'];
 }
 
 function vapourSynthFfmpegArguments(request: ExportRequest, outputPath: string) {
@@ -543,11 +546,15 @@ function compatibilityFilters(request: ExportRequest) {
   const filters: string[] = [];
   const cropWidth = Math.max(0.02, 1 - recipe.cropLeft - recipe.cropRight);
   const cropHeight = Math.max(0.02, 1 - recipe.cropTop - recipe.cropBottom);
-  if (cropWidth < 0.999 || cropHeight < 0.999) filters.push(`crop=trunc(iw*${cropWidth.toFixed(5)}/2)*2:trunc(ih*${cropHeight.toFixed(5)}/2)*2:trunc(iw*${recipe.cropLeft.toFixed(5)}/2)*2:trunc(ih*${recipe.cropTop.toFixed(5)}/2)*2`);
+  // Same order as the VapourSynth script: cadence → rotate → crop (crop fractions are of the rotated frame).
   const parity = recipe.fieldOrder === 'Bottom first' ? 'bff' : recipe.fieldOrder === 'Top first' ? 'tff' : 'auto';
   if (recipe.deinterlace === 'Bwdif') filters.push(`bwdif=mode=send_frame:parity=${parity}:deint=all`);
   if (['Bwdif 2×', 'QTGMC Balanced', 'QTGMC Quality'].includes(recipe.deinterlace)) filters.push(`bwdif=mode=send_field:parity=${parity}:deint=all`);
   if (recipe.deinterlace === 'Inverse Telecine') filters.push(`fieldmatch=order=${parity === 'bff' ? 'bff' : 'tff'}`, 'decimate');
+  if (recipe.rotation === 90) filters.push('transpose=clock');
+  if (recipe.rotation === 180) filters.push('hflip', 'vflip');
+  if (recipe.rotation === 270) filters.push('transpose=cclock');
+  if (cropWidth < 0.999 || cropHeight < 0.999) filters.push(`crop=trunc(iw*${cropWidth.toFixed(5)}/2)*2:trunc(ih*${cropHeight.toFixed(5)}/2)*2:trunc(iw*${recipe.cropLeft.toFixed(5)}/2)*2:trunc(ih*${recipe.cropTop.toFixed(5)}/2)*2`);
   const size = outputDimensions(recipe, width, height);
   filters.push(`scale=${size.width}:${size.height}:flags=lanczos`);
   if (recipe.denoise === 'Balanced' && recipe.denoiseStrength > 0.01) filters.push(`hqdn3d=${recipe.denoiseStrength.toFixed(2)}:${recipe.denoiseStrength.toFixed(2)}:${(recipe.denoiseStrength * 4).toFixed(2)}:${(recipe.denoiseStrength * 4).toFixed(2)}`);
@@ -565,7 +572,8 @@ function compatibilityFilters(request: ExportRequest) {
 
 function compatibilityArguments(request: ExportRequest, outputPath: string) {
   const { clip, source } = request;
-  const args = ['-hide_banner', '-y', '-ss', clip.start.toFixed(6), '-t', (clip.end - clip.start).toFixed(6), '-i', source.sourcePath, '-vf', compatibilityFilters(request).join(',')];
+  // -noautorotate: rotation is the recipe's job, as in VapourSynth (BestSource ignores rotation metadata).
+  const args = ['-hide_banner', '-y', '-noautorotate', '-ss', clip.start.toFixed(6), '-t', (clip.end - clip.start).toFixed(6), '-i', source.sourcePath, '-vf', compatibilityFilters(request).join(',')];
   if (clip.recipe.reverse) args.push('-af', 'areverse');
   args.push(...codecArguments(clip.recipe), ...colorPipeline(clip.recipe, source.sourceAnalysis.colorSpace).encoding, '-progress', 'pipe:2', outputPath);
   return args;
@@ -742,6 +750,9 @@ export async function tunePreview(request: ExportRequest, settings: PreviewSetti
     deband: settings.deband,
     sharpen: settings.sharpen ? 'Natural' : 'Off',
     sharpenStrength: settings.sharpen ? 0.5 : clip.recipe.sharpenStrength,
+    // Measure the processing at source resolution, not after shrinking to e.g. 268×150:
+    // downscaling inflates neighbour-diff, so tiny outputs always read "noisy" → denoise only.
+    masterSize: 'Source',
   };
   const candidateRequest: ExportRequest = { ...request, clip: { ...clip, recipe: candidate } };
   const work = await mkdtemp(path.join(tmpdir(), 'lq-tune-preview-'));
@@ -749,7 +760,7 @@ export async function tunePreview(request: ExportRequest, settings: PreviewSetti
   try {
     onProgress(5, 'Rendering short preview with candidate settings');
     const args = [
-      '-hide_banner', '-y',
+      '-hide_banner', '-y', '-noautorotate',
       '-ss', clip.start.toFixed(6), '-t', previewSeconds.toFixed(6),
       '-i', source.sourcePath,
       '-vf', compatibilityFilters(candidateRequest).join(','),
@@ -759,7 +770,7 @@ export async function tunePreview(request: ExportRequest, settings: PreviewSetti
     await runFfmpeg(await executable('ffmpeg'), args, previewSeconds, signal, (pct, msg) => onProgress(Math.min(70, 5 + Math.round(pct * 0.65)), msg), 'Preview render');
     if (!existsSync(previewPath)) throw new Error('The preview render did not produce a file.');
     onProgress(75, 'Analyzing preview pixels');
-    const brain = await runBrain(previewPath, { fps: source.sourceAnalysis.fps }, signal);
+    const brain = await runBrain(previewPath, { duration: previewSeconds, fps: source.sourceAnalysis.fps }, signal);
     return {
       combPixels: typeof brain.combPixels === 'number' ? brain.combPixels : 0,
       distinctLumaLevels: typeof brain.distinctLumaLevels === 'number' ? brain.distinctLumaLevels : 256,

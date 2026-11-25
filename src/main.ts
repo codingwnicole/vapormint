@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
+import { app, autoUpdater, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } from 'electron';
 import squirrelStartup from 'electron-squirrel-startup';
 import { watch, type FSWatcher, createWriteStream, createReadStream } from 'node:fs';
 import { access, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -497,9 +497,11 @@ async function exportClip(request: ExportRequest) {
     // (source, recipe, engine, outputs, warnings). Best-effort — a missing receipt
     // must not fail the export.
     try {
-      const vapourSynthScriptPath = request.clip.recipe.saveVapourSynthScript ? `${outputPath}.vpy` : undefined;
+      // Name siblings after the actual output file ("Clip 01 2.mov" → "Clip 01 2.vpy"), as processClip does.
+      const stem = path.join(path.dirname(outputPath), path.basename(outputPath, path.extname(outputPath)));
+      const vapourSynthScriptPath = request.clip.recipe.saveVapourSynthScript ? `${stem}.vpy` : undefined;
       const receipt = buildReceipt({ clip: clipResult, source: request.source, outputPath, engine: result.engine, fallbackReason: result.fallbackReason, pngFramesPath: result.pngFramesPath, warnings: result.warnings ?? [], vapourSynthScriptPath });
-      const receiptPath = path.join(path.dirname(outputPath), `${safeFileName(clipResult.name)}.receipt.json`);
+      const receiptPath = `${stem}.receipt.json`;
       await writeFile(receiptPath, JSON.stringify(receipt, null, 2), 'utf8');
       clipResult.receiptPath = receiptPath;
     } catch { /* Receipt is a best-effort audit artifact; never block the master on it. */ }
@@ -611,7 +613,6 @@ else void app.whenReady().then(async () => {
     const current = app.getVersion();
     const reply = (info: UpdateInfo) => { sendUpdate(info); return info; };
     try {
-      sendUpdate({ status: 'downloading', version: current, message: 'Checking for updates…', percent: 0 });
       const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases?per_page=10`, { headers: { Accept: 'application/vnd.github+json' } });
       if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
       const releases = (await res.json()) as Release[];
@@ -626,6 +627,29 @@ else void app.whenReady().then(async () => {
     }
   });
   ipcMain.handle('update:apply', async () => {
+    // Windows: hand the release's own Squirrel feed (RELEASES + .nupkg assets) to Electron's
+    // autoUpdater, which drives the installed Update.exe: download, verify, stage, restart.
+    // Only possible in a Squirrel install whose target release actually ships the feed.
+    const squirrelInstalled = process.platform === 'win32' && app.isPackaged && existsSync(path.resolve(path.dirname(process.execPath), '..', 'Update.exe'));
+    if (squirrelInstalled && latestRelease?.release?.assets?.some((asset) => asset.name === 'RELEASES')) {
+      const { tag } = latestRelease;
+      const reply = (info: UpdateInfo) => { sendUpdate(info); return info; };
+      reply({ status: 'downloading', version: tag, message: `Downloading Vapormint ${tag} (about 350 MB) — keep working, you'll be asked to restart`, percent: 50 });
+      await new Promise<void>((resolve) => {
+        const done = () => { autoUpdater.removeAllListeners('update-downloaded'); autoUpdater.removeAllListeners('update-not-available'); autoUpdater.removeAllListeners('error'); resolve(); };
+        autoUpdater.once('update-downloaded', async () => {
+          done();
+          reply({ status: 'downloaded', version: tag, message: `Vapormint ${tag} is ready — restart to finish updating`, percent: 100 });
+          const { response } = await dialog.showMessageBox(mainWindow!, { type: 'info', buttons: ['Restart now', 'Later'], defaultId: 0, message: `Vapormint ${tag} is ready`, detail: 'Restart to finish updating. If you choose Later, it installs the next time Vapormint starts.' });
+          if (response === 0) autoUpdater.quitAndInstall();
+        });
+        autoUpdater.once('update-not-available', () => { done(); reply({ status: 'current', version: app.getVersion(), message: `You are on the latest version (${app.getVersion()})`, percent: 0 }); });
+        autoUpdater.once('error', (error) => { done(); reply({ status: 'error', version: tag, message: `Update failed: ${errorMessage(error)}`, percent: 0 }); });
+        autoUpdater.setFeedURL({ url: `https://github.com/${GITHUB_REPO}/releases/download/${tag}` });
+        autoUpdater.checkForUpdates();
+      });
+      return;
+    }
     if (process.platform !== 'darwin' || !latestRelease?.release) {
       await shell.openExternal(latestRelease?.url ?? RELEASE_PAGE);
       return;
@@ -641,12 +665,15 @@ else void app.whenReady().then(async () => {
       const total = Number(res.headers.get('content-length') || 0);
       let downloaded = 0;
       const fileStream = createWriteStream(dmgPath);
+      let writeError: Error | undefined;
+      fileStream.on('error', (error) => { writeError = error; }); // unhandled, a full disk would crash the app
       for await (const chunk of res.body as AsyncIterable<Uint8Array>) {
+        if (writeError) throw writeError;
         fileStream.write(chunk);
         downloaded += chunk.length;
         if (total) reply({ status: 'downloading', version: latestRelease.tag, message: 'Downloading update…', percent: Math.round((downloaded / total) * 80) + 5 });
       }
-      await new Promise<void>((resolve, reject) => fileStream.end(() => resolve()));
+      await new Promise<void>((resolve, reject) => fileStream.end(() => writeError ? reject(writeError) : resolve()));
       reply({ status: 'downloading', version: latestRelease.tag, message: 'Installing…', percent: 90 });
       const { stdout } = await capture('hdiutil', ['attach', dmgPath, '-nobrowse', '-readonly', '-mountrandom', tmpdir()]);
       const mountLine = stdout.trim().split('\n').pop() ?? '';
@@ -657,9 +684,14 @@ else void app.whenReady().then(async () => {
         if (!apps.length) throw new Error('No .app found in DMG');
         const src = path.join(mountPoint, apps[0]);
         const dest = path.resolve(process.execPath, '../../..');
+        // Copy beside the app first; only swap once the copy is complete, so a failed copy
+        // never leaves the user with no Vapormint at all.
+        const staged = `${dest}.update`;
+        await rm(staged, { recursive: true, force: true });
+        await cp(src, staged, { recursive: true });
+        await capture('xattr', ['-cr', staged]).catch(() => {});
         await rm(dest, { recursive: true, force: true });
-        await cp(src, dest, { recursive: true });
-        await capture('xattr', ['-cr', dest]).catch(() => {});
+        await rename(staged, dest);
       } finally { await capture('hdiutil', ['detach', mountPoint, '-force']).catch(() => {}); }
       await rm(dmgPath, { force: true }).catch(() => {});
       reply({ status: 'current', version: latestRelease.tag, message: 'Update installed — restart to use the new version', percent: 100 });
