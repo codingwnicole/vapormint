@@ -715,7 +715,8 @@ function NavIcon({ name }: { name: ViewName }) {
 }
 
 function ClipReel({ session }: { session: StudioSession }) {
-  const ref = useRef<HTMLVideoElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const idx = useRef(0);
   const [clips, setClips] = useState<{ url: string; start: number; end: number }[]>([]);
 
@@ -728,21 +729,23 @@ function ClipReel({ session }: { session: StudioSession }) {
   }, [session.id, session.clips.length, session.sources.length]);
 
   useEffect(() => {
-    const v = ref.current;
-    if (!v || !clips.length) return;
+    const v = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!v || !canvas || !clips.length) return;
     let url = '';
     const holdFrame = () => {
       try {
-        const c = document.createElement('canvas');
-        c.width = v.videoWidth; c.height = v.videoHeight;
-        c.getContext('2d')!.drawImage(v, 0, 0);
-        v.style.backgroundImage = `url(${c.toDataURL('image/jpeg', 0.5)})`;
-        v.style.backgroundSize = 'cover';
+        canvas.width = v.videoWidth; canvas.height = v.videoHeight;
+        canvas.getContext('2d')!.drawImage(v, 0, 0);
+        canvas.style.display = 'block';
       } catch {}
     };
     const load = () => {
       const clip = clips[idx.current % clips.length];
-      const seekPlay = () => { v.currentTime = clip.start; v.play().catch(() => {}); };
+      const seekPlay = () => {
+        v.currentTime = clip.start;
+        v.play().then(() => { canvas.style.display = 'none'; }).catch(() => {});
+      };
       if (url !== clip.url) {
         holdFrame();
         url = clip.url;
@@ -760,7 +763,7 @@ function ClipReel({ session }: { session: StudioSession }) {
     const thumb = session.sources.find((s) => s.thumbnailUrl);
     return thumb?.thumbnailUrl ? <img src={thumb.thumbnailUrl} alt="" /> : <span className="preview-empty">&#9654;</span>;
   }
-  return <video ref={ref} muted playsInline />;
+  return <><video ref={videoRef} muted playsInline /><canvas ref={canvasRef} style={{ display: 'none', position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} /></>;
 }
 
 function Home({ session, projects, busy, onNewProject, onOpenProject, onRenameProject, onDeleteProject, onImport, onSeason, onWatch, onDownload, onOpenSource }: { session: StudioSession; projects: ProjectCard[]; busy: boolean; onNewProject(): void; onOpenProject(id: string): void; onRenameProject(id: string): void; onDeleteProject(id: string): void; onImport(): void; onSeason(): void; onWatch(): void; onDownload(url: string): boolean; onOpenSource(id: string): void }) {
