@@ -731,11 +731,23 @@ function ClipReel({ session }: { session: StudioSession }) {
     const v = ref.current;
     if (!v || !clips.length) return;
     let url = '';
+    const snapshotPoster = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        c.getContext('2d')!.drawImage(v, 0, 0);
+        v.poster = c.toDataURL('image/jpeg', 0.5);
+      } catch {}
+    };
     const load = () => {
       const clip = clips[idx.current % clips.length];
-      if (url !== clip.url) { url = clip.url; v.src = clip.url; }
       const seekPlay = () => { v.currentTime = clip.start; v.play().catch(() => {}); };
-      if (v.readyState >= 1) seekPlay(); else v.addEventListener('loadedmetadata', seekPlay, { once: true });
+      if (url !== clip.url) {
+        snapshotPoster();
+        url = clip.url;
+        v.src = clip.url;
+        v.addEventListener('loadedmetadata', seekPlay, { once: true });
+      } else if (v.readyState >= 1) { seekPlay(); } else { v.addEventListener('loadedmetadata', seekPlay, { once: true }); }
     };
     const onTime = () => { const clip = clips[idx.current % clips.length]; if (clip && v.currentTime >= clip.end - 0.05) { idx.current++; load(); } };
     v.addEventListener('timeupdate', onTime);
