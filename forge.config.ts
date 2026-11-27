@@ -27,7 +27,7 @@ const config: ForgeConfig = {
       { x: 192, y: 344, type: 'file', path: opts.appPath },
       { x: 192, y: 150, type: 'file', path: 'scripts/Install Vapormint.command' },
     ],
-  }), new MakerZIP({}, ['darwin'])],
+  }), new MakerZIP({}, ['darwin', 'linux'])],
   plugins: [
     new VitePlugin({
       build: [

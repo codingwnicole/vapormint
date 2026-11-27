@@ -1,0 +1,36 @@
+# Builds a pacman package from the electron-forge output.
+# Run first: sh scripts/build-linux-runtime.sh && npm ci && npm run package
+# Then here: makepkg -f   →   sudo pacman -U vapormint-bin-*.pkg.tar.zst
+pkgname=vapormint-bin
+pkgver=2.3.6
+pkgrel=1
+pkgdesc='Desktop video sifting and VapourSynth processing studio (bundled runtime)'
+arch=('x86_64')
+url='https://github.com/codingwnicole/vapormint'
+license=('custom')
+depends=('gtk3' 'nss' 'alsa-lib')
+provides=('vapormint')
+conflicts=('vapormint')
+# ponytail: bundled python/plugins/ffmpeg are prebuilt; stripping can break them
+options=('!strip' '!debug')
+
+package() {
+  local app="$startdir/../../out/Vapormint-linux-x64"
+  test -x "$app/Vapormint" || { echo "Missing $app — run npm run package first." >&2; return 1; }
+  install -d "$pkgdir/opt/vapormint" "$pkgdir/usr/bin"
+  cp -a "$app/." "$pkgdir/opt/vapormint/"
+  chmod 4755 "$pkgdir/opt/vapormint/chrome-sandbox"
+  ln -s /opt/vapormint/Vapormint "$pkgdir/usr/bin/vapormint"
+  install -Dm644 "$startdir/../../assets/icon-256.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/vapormint.png"
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/vapormint.desktop" <<EOF
+[Desktop Entry]
+Name=Vapormint
+Comment=$pkgdesc
+Exec=vapormint %U
+Icon=vapormint
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;
+StartupWMClass=Vapormint
+EOF
+}

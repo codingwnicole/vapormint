@@ -58,6 +58,22 @@ No Python to set up. No FFmpeg to install. No plugin hunt. Everything ships insi
 
 **Coming from LQ's Cutting Floor (native Swift app)?** Vapormint auto-imports your projects on first launch — originals stay in place, recipes and completed status carry over.
 
+### Linux (Arch / CachyOS / Manjaro, x86_64)
+
+1. Download **`vapormint-bin-<version>-1-x86_64.pkg.tar.zst`** from the [latest release](#releases) that has one (Linux builds can trail the newest Windows/Mac release).
+2. Install it:
+   ```bash
+   cd ~/Downloads
+   sudo pacman -U vapormint-bin-*-x86_64.pkg.tar.zst
+   ```
+   pacman pulls in `gtk3`, `nss`, and `alsa-lib` if you don't already have them.
+3. Launch **Vapormint** from your app menu, or run `vapormint` in a terminal. Same bundled toolchain as Windows: Python 3.12, FFmpeg/FFprobe, yt-dlp, and VapourSynth R79 with every plugin, AKARIN and VSZip included. Nothing to install from AUR.
+
+The app lives in `/opt/vapormint`; projects and settings live in `~/.config/Vapormint`. Uninstall with `sudo pacman -R vapormint-bin`. Upgrading is the same `pacman -U` with the newer file.
+
+**System requirements:** 64-bit Arch-based distro (glibc 2.35+), ~1 GB free disk. Other distros: the `Vapormint-linux-x64-<version>.zip` from `npm run make` runs anywhere with a recent glibc, but isn't published as a release asset.
+
+
 ---
 
 ## Features
@@ -154,6 +170,16 @@ npm run make         # produce installer for the current platform
 
 **Windows:** The finished installer lands in `out/make/squirrel.windows/x64/VapormintSetup.exe`.
 
+**Linux (Arch / CachyOS):**
+
+```bash
+sh scripts/build-linux-runtime.sh   # once: assembles runtime/linux-x64/ (Python, FFmpeg, yt-dlp, VapourSynth + plugins)
+npm run package                     # → out/Vapormint-linux-x64/
+cd packaging/arch && makepkg -f     # → vapormint-bin-<version>-1-x86_64.pkg.tar.zst
+```
+
+Bump `pkgver` in `packaging/arch/PKGBUILD` to match `package.json` before a release. `npm run make` also produces a generic ZIP in `out/make/zip/linux/x64/`. The `verify-runtime-lock` step of `npm run check` only knows the Windows runtime, so it fails on Linux; the self-tests before it are what matter there.
+
 **macOS:** The DMG and ZIP land in `out/make/`. See [`README_MAC.txt`](README_MAC.txt) for Mac-specific build prerequisites and runtime assembly.
 
 > **Line endings:** the repo enforces LF via `.gitattributes` (`* text=auto eol=lf`). The self-tests assert on multi-line source strings, so keep the sources LF — a CRLF checkout will break them.
@@ -170,8 +196,9 @@ Releases live on [GitHub](https://github.com/codingwnicole/vapormint/releases). 
 | `Vapormint-<version>-full.nupkg` | Windows | Full Squirrel package (what the in-app updater consumes). |
 | `Vapormint-darwin-arm64.dmg` | macOS | Disk image for Apple Silicon Macs. |
 | `Vapormint-darwin-arm64-<version>.zip` | macOS | ZIP archive alternative. |
+| `vapormint-bin-<version>-1-x86_64.pkg.tar.zst` | Linux (Arch) | pacman package. `sudo pacman -U` it. |
 
-The app's **Check for updates** detects your platform and finds the right asset automatically via `findCompatibleRelease()`.
+The app's **Check for updates** detects your platform and finds the right asset automatically via `findCompatibleRelease()`. Releases missing your platform's asset are skipped, so a Linux-only or Windows-only release never offers the wrong installer. On Linux, "Install update" opens the release page; install the new package with `pacman -U`.
 
 ---
 
@@ -185,7 +212,7 @@ The Windows installer bundles the whole toolchain, so you never touch a terminal
 - **VapourSynth** core + the plugins the recipes use (QTGMC, KNLMeansCL, Finesharp, VCFreq, deband, descale, ...)
 - The **Vapormint** app itself (Electron + React)
 
-Both platforms bundle the full toolchain. On macOS, yt-dlp can also self-update from `~/Library/Application Support/Vapormint/tools/`.
+All three platforms bundle the full toolchain. On Linux it's assembled by `scripts/build-linux-runtime.sh` (python-build-standalone 3.12, BtbN static FFmpeg, PyPI VapourSynth wheels) and lives in `/opt/vapormint/resources/runtime/linux-x64/`. On macOS, yt-dlp can also self-update from `~/Library/Application Support/Vapormint/tools/`.
 
 ---
 
@@ -201,6 +228,8 @@ Both platforms bundle the full toolchain. On macOS, yt-dlp can also self-update 
 | `src/mac-migration.ts` | macOS: import projects from native LQ's Cutting Floor |
 | `src/tool-updates.ts` | macOS: SHA256-verified yt-dlp downloads |
 | `src/update-release.ts` | Platform-aware release matching (`findCompatibleRelease`) |
+| `scripts/build-linux-runtime.sh` | Assembles the bundled Linux runtime |
+| `packaging/arch/PKGBUILD` | Builds the Arch pacman package from `out/Vapormint-linux-x64/` |
 | `runtime/win32-x64/` | Bundled Python + FFmpeg + VapourSynth (Windows) |
 | `scripts/cf_analysis.py` | The pixel-analysis "brain" the recipes are derived from |
 | `scripts/build-mac-runtime.sh` | Mac runtime assembly script |
@@ -213,7 +242,7 @@ Both platforms bundle the full toolchain. On macOS, yt-dlp can also self-update 
 ### 2.3.0
 - macOS Apple Silicon port (DMG + ZIP installers, bundled runtime, Mac menu bar)
 - Native LQ's Cutting Floor project import on Mac (plist migration, recipe + completed status preserved)
-- Platform-aware update checker (`findCompatibleRelease` — both installers on one release tag)
+- Platform-aware update checker (`findCompatibleRelease` — Windows, macOS, and Linux assets matched per platform)
 - SHA256-verified yt-dlp downloads on Mac
 - In-app dependency updater (yt-dlp self-update from Settings)
 - Thumbnailed clip list with status filters in Process tab

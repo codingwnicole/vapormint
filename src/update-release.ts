@@ -3,6 +3,7 @@ export interface Release { tag_name:string; html_url:string; draft?:boolean; pre
 
 function matchesPlatform(n:string, platform:string, arch:string):boolean {
   if (platform === 'win32') return /\.exe$/.test(n) && /setup/.test(n);
+  if (platform === 'linux') return arch === 'x64' && /\.pkg\.tar\.zst$/.test(n) && /x86_64/.test(n);
   if (platform !== 'darwin' || !/\.(zip|dmg)$/.test(n) || !/(mac|darwin|osx|apple.silicon)/.test(n)) return false;
   if (/universal/.test(n)) return true;
   return arch === 'arm64' ? /arm64|aarch64|apple.silicon/.test(n) : arch === 'x64' && /x64|x86_64|intel/.test(n);

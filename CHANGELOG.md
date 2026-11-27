@@ -1,5 +1,17 @@
 # LQ’s Cutting Floor — Changelog
 
+## 2.3.6 — November 27, 2026
+
+### Added
+
+- **Linux (Arch / CachyOS) build.** A pacman package (`vapormint-bin-2.3.6-1-x86_64.pkg.tar.zst`) with the same fully bundled toolchain as Windows: Python 3.12, FFmpeg/FFprobe, yt-dlp, and VapourSynth R79 with every plugin, AKARIN and VSZip included.
+- Check for updates recognizes Linux packages.
+
+### Fixed
+
+- Mac updater no longer fails with ENOTEMPTY when replacing the running app.
+- Home screen: switching clips no longer jumps or flashes, and project thumbnails show again.
+
 ## 2.3.5 — November 24, 2026
 
 ### Fixed

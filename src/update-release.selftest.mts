@@ -4,6 +4,8 @@ const releases=[{tag_name:'v3.0.0',html_url:'https://github.com/codingwnicole/va
 assert.equal(findCompatibleRelease(releases,'darwin','arm64')?.tag_name,'v2.9.0');
 assert.equal(findCompatibleRelease(releases,'win32','x64')?.tag_name,'v3.0.0');
 assert.equal(findCompatibleRelease(releases,'darwin','x64'),undefined);
+assert.equal(findCompatibleRelease(releases,'linux','x64'),undefined);
+assert.equal(findCompatibleRelease([{tag_name:'v3.1.0',html_url:'',assets:[{name:'vapormint-bin-3.1.0-1-x86_64.pkg.tar.zst'}]},...releases],'linux','x64')?.tag_name,'v3.1.0');
 const macRelease = findCompatibleRelease(releases,'darwin','arm64')!;
 assert.equal(findDmgAsset(macRelease,'arm64')?.name,'Vapormint-darwin-arm64.dmg');
 assert.equal(findDmgAsset(macRelease,'x64'),undefined);
